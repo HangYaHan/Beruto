@@ -4,3 +4,4 @@ yfinance
 matplotlib
 numpy
 pytest
+akshare
