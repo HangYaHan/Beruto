@@ -1,6 +1,7 @@
 import os
 import pandas as pd
-from ..system.log import get_logger
+# Use absolute import to reach the centralized system logger under `src.system`.
+from src.system.log import get_logger
 
 logger = get_logger(__name__)
 

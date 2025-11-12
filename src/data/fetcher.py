@@ -1,23 +1,29 @@
 import time
+import importlib
 from .storage import read_cached, write_cache
 from .exceptions import RateLimitError, DataNotFoundError
-
-# lazy import adapters to avoid heavy deps at import time
-from .adapters import csv_adapter, yfinance_adapter
-from ..system.log import get_logger
-
+from src.system.log import get_logger
 
 logger = get_logger(__name__)
 
-
-ADAPTERS = {
-    'csv': csv_adapter,
-    'yfinance': yfinance_adapter,
+# Map logical adapter names to module import paths. The adapter module is only
+# imported when actually selected to avoid heavy optional dependencies (e.g.
+# yfinance) at import time.
+ADAPTER_MODULES = {
+    'csv': 'src.data.adapters.csv_adapter',
+    'yfinance': 'src.data.adapters.yfinance_adapter',
 }
 
 
 def select_adapter(name):
-    return ADAPTERS.get(name)
+    module_path = ADAPTER_MODULES.get(name)
+    if module_path is None:
+        return None
+    try:
+        return importlib.import_module(module_path)
+    except Exception:
+        logger.exception("Failed to import adapter module: %s", module_path)
+        raise
 
 
 def get_history(symbol, start, end, source='yfinance', interval='1d', adjusted=True,
@@ -74,3 +80,7 @@ def get_history(symbol, start, end, source='yfinance', interval='1d', adjusted=T
 
     logger.error("Failed to fetch %s after attempts=%s", symbol, max_retries)
     raise last_exc if last_exc is not None else RuntimeError('Failed to fetch data')
+
+def valid_test():
+    print("This is a test function.")
+    pass
