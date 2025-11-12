@@ -4,3 +4,4 @@ yfinance
 matplotlib
 numpy
 akshare
+seaborn
