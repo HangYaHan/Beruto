@@ -39,7 +39,7 @@
   - 文档：`docs/update-readme`
   - 重构：`refactor/module-name`
 - 不要使用长期与上游同名的分支（例如直接编辑 `branches`），以免混淆。
-- 对于仅修改test文佳佳
+- 对于仅修改test文件夹的PR我会直接通过。
 
 ---
 
