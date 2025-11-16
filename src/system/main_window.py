@@ -5,9 +5,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Quant Trading System")
-        self.setGeometry(100, 100, 800, 600)  # 设置窗口位置和大小
+        self.setGeometry(100, 100, 800, 600)  # set window position and size
 
-        # 添加更多的 UI 元素和逻辑
+        # add more UI elements and logic
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
