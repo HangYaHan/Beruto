@@ -1,39 +1,35 @@
+# This file is designed to test anything in the src directory
+import sys
+from pathlib import Path
 
-import akshare as ak
-import seaborn as sns
-import pandas as pd
-import matplotlib.pyplot as plt
-import os
+# Make it possible to run this file directly (python src/test.py)
+# by ensuring the project root is on sys.path so `src` can be imported.
+project_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(project_root))
 
-# ========= 参数部分 =========
-symbol = "sh600000"      # 股票代码，比如 "sh600000"（浦发银行）
-start_date = "20200101"  # 开始日期
-end_date = "20251112"    # 结束日期      
-root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # 存放数据在根目录的data文件夹
-save_dir = os.path.join(root_dir, "data")
-# ============================
-
-# 创建data文件夹（如果没有）
-os.makedirs(save_dir, exist_ok=True)
-
-# 拉取日线数据
-df = ak.stock_zh_a_daily(symbol=symbol, start_date=start_date, end_date=end_date)
-
-# 保存数据
-file_path = os.path.join(save_dir, f"{symbol}.csv")
-df.to_csv(file_path, index=False, encoding="utf-8-sig")
-print(f"数据已保存到 {file_path}")
+from src.data import fetcher
+from datetime import datetime
+from src.data import fetcher
+from src.data.exceptions import AdapterError
 
 
-# 画图（收盘价）
-df["date"] = pd.to_datetime(df["date"])
-plt.figure(figsize=(10, 5))
-sns.lineplot(x=df["date"], y=df["close"], label='closing price')
-plt.title(f"{symbol} closing price trend")
-plt.xlabel("Date")
-plt.ylabel("Closing Price (CNY)")
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+def main():
+    symbol = "sh600000"      # example: 浦发银行
+    start_date = "20200101"
+    end_date = "20251112"
 
+    print(f"Fetching {symbol} from {start_date} to {end_date} via akshare...")
+    try:
+        df = fetcher.get_history(symbol, start_date, end_date, source='akshare', cache=True, refresh=False)
+        print(f"Fetched rows: {len(df)}")
+        if not df.empty:
+            print("Cached to disk under data_cache/ (parquet or csv fallback)")
+    except AdapterError as ae:
+        print("Adapter error:", ae)
+        print("Hint: ensure `akshare` is installed in your environment: `pip install akshare`")
+    except Exception as e:
+        print("Failed to fetch:", e)
+
+
+if __name__ == '__main__':
+    main()

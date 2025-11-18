@@ -1,0 +1,6 @@
+{
+    "data_paths": {
+        "akshare": "/data/akshare/",
+        "yfinance": "/data/yfinance/"
+    }
+}

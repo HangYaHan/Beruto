@@ -5,6 +5,13 @@ Portfolio manager interface:
 """
 from typing import Dict, Any
 
+class VirtualManager:
+    name: str
+    
+
+
+
+
 
 class Portfolio:
     def __init__(self, initial_cash: float, config: Dict[str, Any]):
