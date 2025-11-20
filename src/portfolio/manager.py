@@ -118,6 +118,21 @@ class VirtualManager:
         self._record_tx("SELL", symbol, quantity, price, timestamp)
         return True
 
+    def _record_tx(self, side: str, symbol: str, quantity: int, price: float, timestamp: Optional[datetime] = None) -> None:
+        """
+        记录逐笔交易到 `self.history`。保留成交类型、标的、数量、价格、时间、成交后现金和持仓快照。
+        """
+        tx = {
+            "type": side,
+            "symbol": symbol,
+            "quantity": int(quantity),
+            "price": float(price),
+            "timestamp": timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp),
+            "cash": float(self.cash),
+            "positions": copy.deepcopy(self.positions),
+        }
+        self.history.append(tx)
+
     # --- 策略决策汇总与执行 ---
     def _aggregate_actions(self, date: pd.Timestamp, history: pd.DataFrame) -> Dict[str, int]:
         """
