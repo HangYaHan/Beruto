@@ -47,47 +47,28 @@
 
 ---
 
-**3) 新增项目概览文档：`PROJECT_OVERVIEW.md`**
-- 目的：在仓库根目录添加快速概览文件，描述各个顶层目录和主要模块的作用，便于开发者快速导航。
-- 文件：`PROJECT_OVERVIEW.md`（位于仓库根）
+
 
 ---
 
-**4) 新增调试脚本：`tests/_debug_fetch.py`**
-- 目的：调试 `fetcher.get_history` 返回的数据结构（打印 columns 与前几行），用于定位列名不一致问题。
-- 使用方法：
-```powershell
-Set-Location "E:\BETA STAR\FeedbackTrader"
-python -u tests\_debug_fetch.py
-```
 
----
+**3) 修改：`tests/test_backtest.py`（归一化列名）**
+- 构建 `MA20CrossoverStrategy`，在价格上穿 20 日均线时建仓、下穿时平仓，实现可重复的多空切换。
+- 使用仓库自带的 `data/sh600000.parquet.csv`，统一收盘价列名并计算 20 日滚动均线。
+- 逐日遍历数据：更新行情、生成/执行指令，并把当日资产、现金、持仓快照记录到 `vm.daily_snapshots`。
+- 回测结束后打印 `VirtualManager.get_summary()`，再把价格、MA20、绝对 PnL 画到同一张图并输出为 `data/backtest_price_ma20_pnl.png`。
 
-**5) 修改：`tests/test_backtest.py`（归一化列名）**
-- 目的：不同数据适配器返回的列名可能为小写（如 `close`），而脚本期望 `Close`。为兼容多适配器，在读取数据后做列名归一化处理。
-- 修改位置：在读取 `df` 后、计算 `MA20` 之前增加列名映射：
+#### 调用了哪些 `VirtualManager` 功能
+- `add_strategy(...)`：把 `MA20CrossoverStrategy` 注册到投资组合管理器。
+- `update_market_price(symbol, price)`：在每个交易日刷新单个标的的最新行情。
+- `_aggregate_actions(date, history_slice)`：把所有策略在当前日期、给定历史数据窗口下的指令汇总成下单请求（脚本直接调了受保护方法）。
+- `_execute_actions(actions, prices, timestamp)`：按当日价格撮合汇总指令，并写入交易历史 `vm.history`。
+- `get_portfolio_value()`：在生成每日快照时获取最新组合净值。
+- `get_summary()`：输出最终账户资金、仓位、收益等核心指标。
+- 属性读写：
+  - `vm.daily_snapshots`：手动追加每日净值/现金/持仓数据，供后续绘图。
+  - `vm.history`：读取买卖记录，用于在图中标注买入/卖出点。
 
-```python
-# 适配不同数据源返回的列名（有的适配器返回小写列名，如 'close'）
-# 归一化为常用的首字母大写列名（Open/High/Low/Close/Adj Close/Volume）
-col_map = {}
-if 'close' in df.columns and 'Close' not in df.columns:
-    col_map['close'] = 'Close'
-if 'open' in df.columns and 'Open' not in df.columns:
-    col_map['open'] = 'Open'
-if 'high' in df.columns and 'High' not in df.columns:
-    col_map['high'] = 'High'
-if 'low' in df.columns and 'Low' not in df.columns:
-    col_map['low'] = 'Low'
-if 'volume' in df.columns and 'Volume' not in df.columns:
-    col_map['volume'] = 'Volume'
-if col_map:
-    df = df.rename(columns=col_map)
-```
-
-影响：解决了 `KeyError: 'Close'` 的问题，使回测脚本能在 `akshare` 等适配器返回小写列名时正确运行。
-
----
 
 **如何在本地复现/验证**
 1. 进入项目根目录并激活虚拟环境（Windows PowerShell）：
@@ -109,9 +90,4 @@ python tests\test_backtest.py
 
 ---
 
-**后续建议**
-- 将 `VirtualManager._record_tx` 扩展为包含 `order_id`, `fee`, `slippage`, `strategy_id` 等字段，并在 `history` 中保留更标准化的时间格式（例如 ISO-8601 UTC 或 `pd.Timestamp`）。
-- 若需要长期保存交易历史，考虑把 `history` 导出为 Parquet/CSV，或写入轻量数据库（SQLite）。
-- 为 `VirtualManager` 增加更详细的日志（info/debug）以便回测过程中快速定位拒单/部分成交等原因。
 
-如需我把这些变更提交为 git commit（并推送），或进一步扩展 `_record_tx` 的字段与测试，请告诉我下一步操作。
