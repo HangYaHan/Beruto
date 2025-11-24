@@ -4,12 +4,15 @@ import sys
 from typing import NoReturn
 
 from .log import get_logger
+from src.backtest.engine import BacktestEngine
 
 logger = get_logger(__name__)
 
 HELP_TEXT = """FeedbackTrader interactive CLI
 Commands:
   help, h, ?       Show this help
+  config, cfg      Show or set configuration
+  backtest, bt     Run a backtest
   exit, quit, q    Exit the CLI
   (other commands are not implemented yet)
 """
@@ -50,6 +53,13 @@ def interactive_loop() -> int:
         if cmd in ("backtest", "bt"):
             logger.info("User requested backtest command (not implemented)")
             print("Backtest command is not implemented yet.")
+            backtest_engine = BacktestEngine()
+            backtest_engine.run_backtest()
+            continue
+
+        if cmd in ("config", "cfg"):
+            logger.info("User requested config command (not implemented)")
+            print("Config command is not implemented yet.")
             continue
 
         if cmd == "anjzy":
