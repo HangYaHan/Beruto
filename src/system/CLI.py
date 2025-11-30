@@ -66,7 +66,11 @@ def interactive_loop() -> int:
             logger.info("User entered secret command 'anjzy'")
             print("You found the secret command! -- ashgk")
             continue
-
+        
+        if cmd == "axhxt":
+            logger.info("User entered secret command 'axhxt'")
+            print("You found the top secret command! -- amhxr")
+            continue
         print(f"Unknown command: {cmd_line}. Type 'help' for available commands.")
 
 def main(argv: list[str] | None = None) -> int:
