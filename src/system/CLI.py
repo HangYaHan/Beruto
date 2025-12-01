@@ -86,6 +86,11 @@ def interactive_loop() -> int:
             run_plot_command(args)
             continue
 
+        if cmd == "plot":
+            from src.ploter.ploter import run_plot_command
+            run_plot_command(args)
+            continue
+
         print(f"Unknown command: {cmd_line}. Type 'help' for available commands.")
 
 def main(argv: list[str] | None = None) -> int:
