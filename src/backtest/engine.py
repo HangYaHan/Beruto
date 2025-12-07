@@ -62,9 +62,10 @@ def run_task(task_name: str):
 
 	commission = port_cfg.get('commission', 0.0)
 	slippage = port_cfg.get('slippage', 0.0)
+	initial_cash = port_cfg.get('cash', 1_000_000.0)
 
-	logger.info("Running backtest: commission=%.4f slippage=%.4f", commission, slippage)
-	equity_curve = run_backtest(strategy, df, commission=commission, slippage=slippage)
+	logger.info("Running backtest: cash=%.2f commission=%.4f slippage=%.4f", initial_cash, commission, slippage)
+	equity_curve = run_backtest(strategy, df, commission=commission, slippage=slippage, initial_cash=initial_cash)
 	logger.info("Backtest finished: start=%s end=%s final_equity=%.2f", df.index.min(), df.index.max(), equity_curve.iloc[-1,0])
 	return equity_curve
 

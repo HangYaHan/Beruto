@@ -3,14 +3,14 @@
     "module": "src.strategy.yahan_strategies",
     "class": "SMAStrategy",
     "params": {
-      "symbol": "sh600519",
+      "symbol": "sz002475",
       "short_window": 5,
       "long_window": 20,
-      "qty": 1000
+      "qty": 100
     }
   },
   "portfolio": {
-    "cash": 1000000,
+    "cash": 20000,
     "commission": 0.0005,
     "slippage": 0.0005,
     "start": "2024-01-01",
@@ -18,7 +18,7 @@
   },
   "data": {
     "source": "akshare",
-    "symbol": "sh601000",
+    "symbol": "sz002475",
     "interval": "1d",
     "cache": true,
     "refresh": false

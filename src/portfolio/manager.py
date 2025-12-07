@@ -69,8 +69,8 @@ class PortfolioManager:
 		return self.state.equity(prices)
 
 
-def run_backtest(strategy, data: pd.DataFrame, commission: float, slippage: float):
-	pm = PortfolioManager(cash=1_000_000.0, commission=commission, slippage=slippage)
+def run_backtest(strategy, data: pd.DataFrame, commission: float, slippage: float, initial_cash: float = 1_000_000.0):
+	pm = PortfolioManager(cash=initial_cash, commission=commission, slippage=slippage)
 	equity_curve = []
 
 	for dt, row in data.iterrows():
