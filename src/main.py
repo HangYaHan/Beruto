@@ -18,7 +18,7 @@ def main(args: Any = None) -> int:
     """
     # When executed directly (python src/main.py), make sure project root is importable
     if __package__ is None:
-        project_root = Path(__file__).resolve().parents[1]
+        project_root = Path(__file__).resolve().parents[1] # Get father directory of 'src'
         sys.path.insert(0, str(project_root))
 
     # Import CLI entrypoint and delegate

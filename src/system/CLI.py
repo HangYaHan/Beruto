@@ -12,7 +12,7 @@ Commands:
     help, h, ?       Show this help
     config, cfg      Show or set configuration
     backtest, bt     Run a backtest
-    plot             Plot cached OHLC data
+    plot, pt         Plot cached OHLC data
     exit, quit, q    Exit the CLI
 
 For detailed all command usage, see docs/COMMANDS.md
@@ -73,6 +73,11 @@ def interactive_loop() -> int:
             print("Config command is not implemented yet.")
             continue
 
+        if cmd in ("plot", "pt"):
+            from src.ploter.ploter import run_plot_command
+            run_plot_command(args)
+            continue
+
         if cmd == "anjzy":
             logger.info("User entered secret command 'anjzy'")
             print("You found the secret command! -- ashgk")
@@ -82,12 +87,6 @@ def interactive_loop() -> int:
             logger.info("User entered secret command 'axhxt'")
             print("You found the top secret command! -- amhxr")
             continue
-
-        if cmd == "plot":
-            from src.ploter.ploter import run_plot_command
-            run_plot_command(args)
-            continue
-
 
         print(f"Unknown command: {cmd_line}. Type 'help' for available commands.")
 

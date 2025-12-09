@@ -17,9 +17,10 @@ def configure_root_logger(level=logging.INFO):
 
     This is idempotent: calling multiple times won't add duplicate handlers.
     It removes any existing StreamHandler to avoid stdout/stderr logging.
+    Ensures idempotence.
     """
-    root = logging.getLogger()
-    if getattr(root, '_feedbacktrader_configured', False):
+    root = logging.getLogger() # all loggers will propagate to root
+    if getattr(root, '_beruto_configured', False):
         return
 
     root.setLevel(level)
@@ -36,9 +37,16 @@ def configure_root_logger(level=logging.INFO):
     fh.setFormatter(fh_formatter)
     root.addHandler(fh)
 
-    root._feedbacktrader_configured = True
+    root._beruto_configured = True
 
 
 def get_logger(name: str = None):
+    """
+    Pass different __name__ to get loggers for different modules.
+    Ensures root logger is configured on first call.
+    """ 
     configure_root_logger()
+
+    # there is a registry of loggers, every call to getLogger with the same name
+    # returns the same logger instance.
     return logging.getLogger(name)
