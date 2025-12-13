@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.dates import DateFormatter
 from src.system.log import get_logger
+from src.system.startup import new_result_run_dir
 from src.strategy.calc_lines import MA, EMA, RSI, MACD, BOLL, ATR
 
 logger = get_logger(__name__)
@@ -226,7 +227,15 @@ def plot_kline(
 			logger.exception('Failed saving plot: %s', e)
 			raise
 	else:
-		plt.show(block=True)
+		# Default to saving in a result run directory
+		run_dir = new_result_run_dir()
+		out_path = run_dir / f"plot_{symbol}_{frame}.png"
+		try:
+			fig.savefig(out_path, dpi=120, bbox_inches='tight')
+			logger.info('Saved plot to %s', out_path)
+		except Exception as e:
+			logger.exception('Failed saving default plot: %s', e)
+			raise
 
 	plt.close(fig)
 
@@ -351,7 +360,10 @@ def run_plot_command(args: list[str]) -> None:
 			macd=macd_params,
 			atr=atr_window,
 		)
-		print(f"Plotted {symbol} ({frame}) rows={len(df)}" + (f" -> {output}" if output else ""))
+		if output:
+			print(f"Plotted {symbol} ({frame}) rows={len(df)} -> {output}")
+		else:
+			print(f"Plotted {symbol} ({frame}) rows={len(df)} -> saved to result run directory")
 	except Exception as e:
 		logger.exception("Plotting failed for %s: %s", symbol, e)
 		print(f"Plot failed: {e}")

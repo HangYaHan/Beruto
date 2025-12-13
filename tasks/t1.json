@@ -1,17 +1,14 @@
 {
     "strategy": {
         "module": "src.strategy.yahan_strategies",
-        "class": "MACDStrategy",
+        "class": "BuyAndHoldStrategy",
         "params": {
-            "symbol": "sh601000",
-            "fast": 12,
-            "slow": 26,
-            "signal": 9,
-            "qty": 1000
+            "symbol": "sh600519",
+            "qty": 100
         }
     },
     "portfolio": {
-        "cash": 1000000,
+        "cash": 10000,
         "commission": 0.0005,
         "slippage": 0.0005,
         "start": "2022-01-01",

@@ -6,6 +6,7 @@ from typing import Any
 import sys
 from pathlib import Path
 from system.log import get_logger
+from system.startup import ensure_workspace_dirs
 
 logger = get_logger(__name__)
 
@@ -23,9 +24,10 @@ def main(args: Any = None) -> int:
 
     # Import CLI entrypoint and delegate
     from src.system.CLI import main as cli_main
+    # Ensure workspace directories once at app start (redundant-safe with CLI)
+    ensure_workspace_dirs()
     return cli_main(args)
 
 
 if __name__ == "__main__":
-    logger.info("Starting application")
     raise SystemExit(main())

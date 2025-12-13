@@ -4,6 +4,7 @@ import sys
 from typing import NoReturn
 
 from .log import get_logger
+from .startup import ensure_workspace_dirs
 
 logger = get_logger(__name__)
 
@@ -62,7 +63,12 @@ def interactive_loop() -> int:
             task_name = args[0]
             try:
                 curve = run_task(task_name)
-                print(f"Backtest done. Final equity: {curve.iloc[-1,0]:.2f}")
+                final = curve.iloc[-1]
+                print(f"Backtest done.")
+                print(f"  Final equity: {final['equity']:.2f}")
+                print(f"  Cash: {final['cash']:.2f}")
+                print(f"  Position value: {final['position_value']:.2f}")
+                print(f"  Stock return (pct change of position value): {final['stock_return_pct']*100:.2f}%")
             except Exception as e:
                 logger.exception("Backtest failed: %s", e)
                 print(f"Backtest failed: {e}")
@@ -93,6 +99,8 @@ def interactive_loop() -> int:
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the interactive CLI."""
     try:
+        # Ensure required directories before starting CLI loop
+        ensure_workspace_dirs()
         return interactive_loop()
     except Exception as e:
         logger.exception("CLI failed: %s", e)
