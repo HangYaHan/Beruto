@@ -1,0 +1,26 @@
+{
+  "strategy": {
+    "module": "src.strategy.yahan_strategies",
+    "class": "BuyAndHoldStrategy",
+    "params": {
+      "symbol": "sh600519",
+      "initial_cash": 1000000,
+      "commission": 0.0005,
+      "slippage": 0.0005
+    }
+  },
+  "portfolio": {
+    "cash": 1000000,
+    "commission": 0.0005,
+    "slippage": 0.0005,
+    "start": "2024-01-01",
+    "end": "2025-12-31"
+  },
+  "data": {
+    "source": "akshare",
+    "symbol": "sh600519",
+    "interval": "1d",
+    "cache": true,
+    "refresh": false
+  }
+}
