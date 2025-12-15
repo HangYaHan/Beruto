@@ -127,6 +127,90 @@ class MACDStrategy:
         return dict(self._orders)
 
 
+class MACDMonotoneStrategy:
+    """MACD variant: 3-bar monotone moves with size scaled by distance from zero."""
+
+    def __init__(
+        self,
+        symbol: str,
+        fast: int = 12,
+        slow: int = 26,
+        signal: int = 9,
+        base_qty: int = 100,
+        sensitivity: float = 10.0,
+        max_multiplier: float = 3.0,
+    ) -> None:
+        self.symbol = symbol
+        self.fast = fast
+        self.slow = slow
+        self.signal = signal
+        self.base_qty = base_qty
+        self.sensitivity = sensitivity
+        self.max_multiplier = max_multiplier
+        if fast == 12:
+            logger.warning("MACDMonotoneStrategy: fast uses default=12")
+        if slow == 26:
+            logger.warning("MACDMonotoneStrategy: slow uses default=26")
+        if signal == 9:
+            logger.warning("MACDMonotoneStrategy: signal uses default=9")
+        if base_qty == 100:
+            logger.warning("MACDMonotoneStrategy: base_qty uses default=100")
+        if sensitivity == 10.0:
+            logger.warning("MACDMonotoneStrategy: sensitivity uses default=10.0")
+        if max_multiplier == 3.0:
+            logger.warning("MACDMonotoneStrategy: max_multiplier uses default=3.0")
+
+    def _select_price(self, history: pd.DataFrame) -> pd.Series | None:
+        if self.symbol in history.columns:
+            return CLOSE(history[[self.symbol]].rename(columns={self.symbol: "close"}))
+        if "Close" in history.columns:
+            return history["Close"]
+        if "close" in history.columns:
+            return history["close"]
+        return None
+
+    def _is_monotone(self, series: pd.Series, direction: str) -> bool:
+        if series.shape[0] < 3:
+            return False
+        window = series.iloc[-3:]
+        if window.isna().any():
+            return False
+        if direction == "up":
+            return bool(window.iloc[0] < window.iloc[1] < window.iloc[2])
+        if direction == "down":
+            return bool(window.iloc[0] > window.iloc[1] > window.iloc[2])
+        raise ValueError(f"Unknown direction: {direction}")
+
+    def _scaled_qty(self, macd_value: float, side: str) -> int:
+        distance = -macd_value if side == "buy" else macd_value
+        distance = max(distance, 0.0)
+        multiplier = 1 + self.sensitivity * distance
+        if self.max_multiplier is not None:
+            multiplier = min(multiplier, self.max_multiplier)
+        qty = int(self.base_qty * multiplier)
+        return max(qty, 0)
+
+    def decide(self, date: pd.Timestamp, history: pd.DataFrame) -> Dict[str, int]:
+        if history.empty:
+            return {}
+
+        price = self._select_price(history)
+        if price is None:
+            return {}
+
+        macd_series = MACD(price, fast=self.fast, slow=self.slow, signal=self.signal)["macd"]
+
+        if self._is_monotone(macd_series, "up"):
+            qty = self._scaled_qty(macd_series.iloc[-1], side="buy")
+            return {self.symbol: qty} if qty > 0 else {}
+
+        if self._is_monotone(macd_series, "down"):
+            qty = self._scaled_qty(macd_series.iloc[-1], side="sell")
+            return {self.symbol: -qty} if qty > 0 else {}
+
+        return {}
+
+
 class BuyAndHoldStrategy:
     """Use initial cash to buy as many shares as possible on the first bar, then hold."""
 

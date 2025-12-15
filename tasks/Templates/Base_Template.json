@@ -1,27 +1,57 @@
 {
-  "strategy": {
-    "module": "GIVE THE PATH OF THE STRATEGY HERE, STRING, e.g., src.strategy.yahan_strategies",
-    "class": "GIVE THE CLASS NAME OF THE STRATEGY HERE, STRING, e.g., SMAStrategy",
-    "params": {
-      "symbol": "GIVE THE TRADING SYMBOL HERE, STRING, e.g., sh601000",
-      "params1": "GIVE PARAM 1 HERE, e.g., DEPENDS, short_window",
-      "params2": "GIVE PARAM 2 HERE, e.g., DEPENDS, long_window",
-      "params3": "GIVE PARAM 3 HERE, e.g., DEPENDS, qty",
-      "...": "ADD ALL STRATEGY PARAMETERS AS NEEDED"
+  "universe": {
+    "symbols": [
+      "<SYMBOL>"
+    ],
+    "data": {
+      "source": "<DATA_SOURCE>",
+      "interval": "1d",
+      "cache": true,
+      "refresh": false
     }
   },
+  "strategies": [
+    {
+      "name": "main",
+      "module": "<MODULE_PATH>",
+      "class": "<CLASS_NAME>",
+      "params": {
+        "symbol": "<SYMBOL>"
+      },
+      "routing": {
+        "on": [
+          "<SYMBOL>"
+        ],
+        "priority": 1
+      }
+    }
+  ],
   "portfolio": {
-    "cash": "INITIAL CASH AMOUNT HERE, VALUE, e.g., 1000000",
-    "commission": "GIVE THE COMMISSION RATE HERE, VALUE, e.g., 0.0005",
-    "slippage": "GIVE THE SLIPPAGE RATE HERE, VALUE, e.g., 0.0005",
-    "start": "BACKTEST START DATE HERE, STRING, e.g., 2024-01-01",
-    "end": "BACKTEST END DATE HERE, STRING, e.g., 2025-12-01"
+    "cash": 1000000,
+    "commission": 0.0005,
+    "slippage": 0.0005,
+    "allow_short": false,
+    "initial_positions": {
+      "<SYMBOL>": 0
+    },
+    "risk": {
+      "max_position_pct": 0.3,
+      "max_symbol_qty": 100000
+    }
   },
-  "data": {
-    "source": "DATA SOURCE HERE, STRING, e.g., akshare",
-    "symbol": "GIVE THE TRADING SYMBOL HERE, STRING, e.g., sh601000",
-    "interval": "GIVE THE DATA INTERVAL HERE, STRING, e.g., 1d",
-    "cache": "SHOULD CACHE DATA, BOOLEAN, e.g., true",
-    "refresh": "SHOULD REFRESH DATA, BOOLEAN, e.g., false"
+  "execution": {
+    "mode": "close",
+    "time": "15:00:00",
+    "lot_size": 1,
+    "price_field": "Close"
+  },
+  "calendar": {
+    "start": "2024-01-01",
+    "end": "2025-12-31"
+  },
+  "outputs": {
+    "save_equity_curve": true,
+    "save_orders": true,
+    "folder": "results"
   }
 }
