@@ -1,30 +1,113 @@
 from __future__ import annotations
 
 import sys
+import shutil
+from pathlib import Path
 from typing import NoReturn
 
 from .log import get_logger
 from .startup import ensure_workspace_dirs
+from .help_texts import get_help_text
 
 logger = get_logger(__name__)
 
-HELP_TEXT = """FeedbackTrader interactive CLI
-Commands:
-    help, h, ?       Show this help
-    config, cfg      Show or set configuration
-    backtest, bt     Run a backtest
-    plot, pt         Plot cached OHLC data
-    exit, quit, q    Exit the CLI
+HELP_TEXT = get_help_text()  # Backward-compatible general help text
 
-For detailed all command usage, see docs/COMMANDS.md
+ROOT_DIR = Path(__file__).resolve().parents[2]
+RESULT_DIR = ROOT_DIR / "result"
+LOG_DIR = ROOT_DIR / "logs"
 
-If you just want to see something quick, try:
-    plot sh600000 --frame weekly
-"""
+
+def _delete_path(p: Path) -> None:
+    """Delete file or directory recursively, ignoring missing."""
+    if not p.exists():
+        return
+    if p.is_dir():
+        # Be resilient: ignore permission issues and continue
+        try:
+            shutil.rmtree(p, ignore_errors=True)
+        except Exception as e:
+            logger.warning("Failed to delete directory %s: %s", p, e)
+    else:
+        # Windows may forbid unlinking files opened by the logger.
+        # Catch and ignore such errors to avoid crashing the CLI.
+        try:
+            p.unlink(missing_ok=True)  # type: ignore[arg-type]
+        except TypeError:
+            # Python <3.8 compat; fall back
+            try:
+                p.unlink()
+            except FileNotFoundError:
+                pass
+            except PermissionError as e:
+                logger.info("Skipping in-use file %s: %s", p, e)
+            except Exception as e:
+                logger.warning("Failed to delete file %s: %s", p, e)
+        except PermissionError as e:
+            logger.info("Skipping in-use file %s: %s", p, e)
+        except Exception as e:
+            logger.warning("Failed to delete file %s: %s", p, e)
+
+
+def handle_remove(args: list[str]) -> None:
+    """Handle remove/rm command with required flags."""
+    if not args:
+        print(get_help_text("remove"))
+        return
+
+    flag = args[0].lower()
+    if flag not in {"-r", "-l", "-all"}:
+        if flag == "-?":
+            print(get_help_text("remove"))
+            return
+        print(get_help_text("remove"))
+        return
+
+    # ensure dirs exist
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    if flag == "-r":
+        if len(args) == 2 and args[1].lower() == "leaderboard":
+            lb = RESULT_DIR / "leaderboard.csv"
+            if lb.exists():
+                _delete_path(lb)
+                logger.info("Deleted leaderboard at %s", lb)
+                print("Deleted leaderboard.")
+            else:
+                print("Leaderboard not found; nothing to delete.")
+            return
+			
+        # clear result contents except leaderboard
+        for item in RESULT_DIR.iterdir():
+            if item.name == "leaderboard.csv":
+                continue
+            _delete_path(item)
+        logger.info("Cleared result folder (kept leaderboard)")
+        print("Cleared result outputs (leaderboard kept).")
+        return
+
+    if flag == "-l":
+        for item in LOG_DIR.iterdir():
+            _delete_path(item)
+        logger.info("Cleared all old logs")
+        print("Cleared all old logs.")
+        return
+
+    if flag == "-all":
+        for item in RESULT_DIR.iterdir():
+            if item.name == "leaderboard.csv":
+                continue
+            _delete_path(item)
+        for item in LOG_DIR.iterdir():
+            _delete_path(item)
+        logger.info("Cleared result (kept leaderboard) and logs")
+        print("Cleared result outputs (leaderboard kept) and logs.")
+        return
 
 def print_help() -> None:
     """Print help text to stdout."""
-    print(HELP_TEXT)
+    print(get_help_text())
 
 def interactive_loop() -> int:
     """Simple REPL that responds to exact commands like 'help' and 'exit'."""
@@ -58,7 +141,10 @@ def interactive_loop() -> int:
         if cmd in ("backtest", "bt"):
             from src.backtest.engine import run_task
             if not args:
-                print("Usage: backtest TASK_NAME (without .json, from tasks folder)")
+                print(get_help_text("backtest"))
+                continue
+            if args and args[0] == "-?":
+                print(get_help_text("backtest"))
                 continue
             task_name = args[0]
             try:
@@ -76,12 +162,25 @@ def interactive_loop() -> int:
 
         if cmd in ("config", "cfg"):
             logger.info("User requested config command (not implemented)")
-            print("Config command is not implemented yet.")
+            if args and args[0] == "-?":
+                print(get_help_text("config"))
+            else:
+                print("Config command is not implemented yet. Use 'config -?' for intended usage.")
             continue
 
         if cmd in ("plot", "pt"):
             from src.ploter.ploter import run_plot_command
+            if args and args[0] == "-?":
+                print(get_help_text("plot"))
+                continue
             run_plot_command(args)
+            continue
+
+        if cmd in ("remove", "rm"):
+            if args and args[0] == "-?":
+                print(get_help_text("remove"))
+                continue
+            handle_remove(args)
             continue
 
         if cmd == "anjzy":
