@@ -12,7 +12,7 @@ from __future__ import annotations
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from matplotlib.dates import DateFormatter
+from matplotlib import dates as mdates
 from src.system.log import get_logger
 from src.system.startup import new_result_run_dir
 from src.strategy.calc_lines import MA, EMA, RSI, MACD, BOLL, ATR
@@ -67,6 +67,7 @@ def plot_kline(
 	rsi: list[int] | None = None,
 	macd: tuple[int, int, int] | None = None,
 	atr: int | None = None,
+    trades: pd.DataFrame | None = None,
 ) -> None:
 	if df is None or df.empty:
 		raise ValueError('Empty DataFrame provided to plot_kline')
@@ -78,6 +79,9 @@ def plot_kline(
 
 	df = df.sort_index()
 	df = _resample(df, frame)
+
+	# figure size: adapt width to number of bars (approx 1 inch per 10 bars, clamped 12–24)
+	n_bars = max(1, len(df))
 
 	# determine indicator panels
 	indicator_types = []
@@ -100,7 +104,7 @@ def plot_kline(
 		n_panels,
 		1,
 		sharex=True,
-		figsize=(10, fig_height),
+		figsize=(max(12.0, min(24.0, n_bars / 10.0)), fig_height),
 		gridspec_kw={'height_ratios': height_ratios},
 		constrained_layout=True,
 	)
@@ -138,8 +142,13 @@ def plot_kline(
 			rect = Rectangle((ts, body_low), pd.Timedelta(days=width), body_height, facecolor=color, edgecolor=color, linewidth=0.5)
 			ax.add_patch(rect)
 
-	ax.xaxis.set_major_formatter(DateFormatter('%Y-%m-%d'))
-	fig.autofmt_xdate()
+	# Use automatic, concise date ticks to avoid clutter
+	locator = mdates.AutoDateLocator(minticks=6, maxticks=10)
+	formatter = mdates.ConciseDateFormatter(locator)
+	ax.xaxis.set_major_locator(locator)
+	ax.xaxis.set_major_formatter(formatter)
+	# Add a bit of margin to keep markers from touching borders
+	ax.margins(x=0.01, y=0.05)
 
 	if 'Volume' in df.columns:
 		ax2 = ax.twinx()
@@ -181,6 +190,69 @@ def plot_kline(
 	if handles:
 		ax.legend(loc='upper left', fontsize=8)
 
+	# Annotate trades (buy/sell markers)
+	if trades is not None and not trades.empty:
+		try:
+			tr = trades.copy()
+			tr['date'] = pd.to_datetime(tr['date'])
+			tr = tr.sort_values('date')
+			# filter current symbol only if symbol column exists
+			if 'symbol' in tr.columns:
+				tr = tr[tr['symbol'] == symbol]
+			# align to plotting index range
+			min_dt = pd.to_datetime(df.index.min())
+			max_dt = pd.to_datetime(df.index.max())
+			tr = tr[(tr['date'] >= min_dt) & (tr['date'] <= max_dt)]
+			if not tr.empty:
+				# fetch price at trade date (use Close)
+				close_series = df['Close']
+				buy_mask = (tr.get('side', '').astype(str).str.upper() == 'BUY') | (tr.get('qty', 0) > 0)
+				sell_mask = (tr.get('side', '').astype(str).str.upper() == 'SELL') | (tr.get('qty', 0) < 0)
+				buy_dt = tr.loc[buy_mask, 'date']
+				sell_dt = tr.loc[sell_mask, 'date']
+				buy_px = []
+				sell_px = []
+				for d in buy_dt:
+					# use nearest available index on/ before date
+					idx = close_series.loc[:d]
+					buy_px.append(float(idx.iloc[-1]) if not idx.empty else None)
+				for d in sell_dt:
+					idx = close_series.loc[:d]
+					sell_px.append(float(idx.iloc[-1]) if not idx.empty else None)
+				buy_dt_plot = [d for d, p in zip(buy_dt, buy_px) if p is not None]
+				buy_px_plot = [p for p in buy_px if p is not None]
+				sell_dt_plot = [d for d, p in zip(sell_dt, sell_px) if p is not None]
+				sell_px_plot = [p for p in sell_px if p is not None]
+				# Use more explicit markers and colors
+				if buy_dt_plot:
+					ax.scatter(
+						buy_dt_plot,
+						buy_px_plot,
+						marker='^',
+						facecolors='#2ca02c',  # vivid green
+						edgecolors='black',
+						s=64,
+						alpha=0.9,
+						label='BUY'
+					)
+				if sell_dt_plot:
+					ax.scatter(
+						sell_dt_plot,
+						sell_px_plot,
+						marker='v',
+						facecolors='#d62728',  # vivid red
+						edgecolors='black',
+						s=64,
+						alpha=0.9,
+						label='SELL'
+					)
+				# ensure legend includes BUY/SELL
+				handles2, labels2 = ax.get_legend_handles_labels()
+				if handles2:
+					ax.legend(loc='upper left', fontsize=8)
+		except Exception as e:
+			logger.warning('Failed to annotate trades: %s', e)
+
 	# Indicator panel
 	# draw indicators, one panel per type
 	for idx, ind_type in enumerate(indicator_types):
@@ -221,7 +293,7 @@ def plot_kline(
 
 	if output:
 		try:
-			fig.savefig(output, dpi=120, bbox_inches='tight')
+			fig.savefig(output, dpi=180, bbox_inches='tight')
 			logger.info('Saved plot to %s', output)
 		except Exception as e:
 			logger.exception('Failed saving plot: %s', e)
@@ -231,7 +303,7 @@ def plot_kline(
 		run_dir = new_result_run_dir()
 		out_path = run_dir / f"plot_{symbol}_{frame}.png"
 		try:
-			fig.savefig(out_path, dpi=120, bbox_inches='tight')
+			fig.savefig(out_path, dpi=180, bbox_inches='tight')
 			logger.info('Saved plot to %s', out_path)
 		except Exception as e:
 			logger.exception('Failed saving default plot: %s', e)

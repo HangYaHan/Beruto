@@ -14,6 +14,7 @@ Commands:
     config, cfg      Show or set configuration
     backtest, bt     Run a backtest
     plot, pt         Plot cached OHLC data
+    remove, rm       Clean everything (results, cache, logs)
     exit, quit, q    Exit the CLI
 
 For detailed all command usage, see docs/COMMANDS.md

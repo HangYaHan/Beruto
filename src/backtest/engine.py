@@ -14,6 +14,7 @@ from src.portfolio.manager import run_backtest_multi
 from src.system.startup import new_result_run_dir
 from src.system.log import get_logger
 import matplotlib.pyplot as plt
+from src.ploter.ploter import plot_kline
 
 logger = get_logger(__name__)
 
@@ -157,6 +158,28 @@ def run_task(task_name: str):
 				date_str = pd.to_datetime(r['date']).date()
 				f.write(f"{date_str}: {r['side']} {r['symbol']} qty={r['qty']} price={r['price']:.4f} fee={r['fee']:.2f}\n")
 		logger.info("Saved trades to %s", trades_txt)
+
+		# Save per-symbol price chart with BUY/SELL markers
+		try:
+			for sym, df in data_map.items():
+				out_path = run_dir / f"{sym}_price_trades.png"
+				# Use daily frame; rely on df index
+				plot_kline(
+					df,
+					symbol=sym,
+					frame='daily',
+					output=str(out_path),
+					ma=None,
+					ema=None,
+					boll=None,
+					rsi=None,
+					macd=None,
+					atr=None,
+					trades=trades,
+				)
+				logger.info("Saved price+trades plot to %s", out_path)
+		except Exception as e:
+			logger.exception("Failed to save price+trades plots: %s", e)
 
 	# Append leaderboard
 	leaderboard_path = run_dir.parent / "leaderboard.csv"
