@@ -111,6 +111,32 @@ def ATR(high: SeriesLike, low: SeriesLike, close: SeriesLike, window: int = 14) 
 	return tr.rolling(window, min_periods=1).mean()
 
 
+def SUPPORT_LINE(series: SeriesLike, window: int = 20, temperature: float = 1.0) -> SeriesLike:
+	"""Smoothed rolling minimum as support line.
+
+	`temperature` (>0) scales smoothing strength: higher values dampen noise by
+	using a longer EWMA span based on `window * temperature`.
+	"""
+	if temperature <= 0:
+		raise ValueError("temperature must be positive")
+	raw_support = series.rolling(window, min_periods=1).min()
+	span = max(1, int(round(window * temperature)))
+	return raw_support.ewm(span=span, adjust=False).mean()
+
+
+def RESISTANCE_LINE(series: SeriesLike, window: int = 20, temperature: float = 1.0) -> SeriesLike:
+	"""Smoothed rolling maximum as resistance/breakout line.
+
+	`temperature` (>0) scales smoothing strength: higher values dampen noise by
+	using a longer EWMA span based on `window * temperature`.
+	"""
+	if temperature <= 0:
+		raise ValueError("temperature must be positive")
+	raw_resist = series.rolling(window, min_periods=1).max()
+	span = max(1, int(round(window * temperature)))
+	return raw_resist.ewm(span=span, adjust=False).mean()
+
+
 def RESAMPLE_OHLC(df: pd.DataFrame, rule: str) -> pd.DataFrame:
 	if not isinstance(df.index, pd.DatetimeIndex):
 		raise TypeError("DataFrame index must be DatetimeIndex for resampling")
@@ -157,4 +183,6 @@ __all__ = [
 	"ATR",
 	"RESAMPLE_OHLC",
 	"RESAMPLE",
+	"SUPPORT_LINE",
+	"RESISTANCE_LINE",
 ]

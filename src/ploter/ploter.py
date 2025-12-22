@@ -15,7 +15,7 @@ from matplotlib.patches import Rectangle
 from matplotlib import dates as mdates
 from src.system.log import get_logger
 from src.system.startup import new_result_run_dir
-from src.strategy.calc_lines import MA, EMA, RSI, MACD, BOLL, ATR
+from src.strategy.calc_lines import MA, EMA, RSI, MACD, BOLL, ATR, SUPPORT_LINE, RESISTANCE_LINE
 
 logger = get_logger(__name__)
 
@@ -67,6 +67,7 @@ def plot_kline(
 	rsi: list[int] | None = None,
 	macd: tuple[int, int, int] | None = None,
 	atr: int | None = None,
+	support_breakout: tuple[int, float] | None = None,
     trades: pd.DataFrame | None = None,
 ) -> None:
 	if df is None or df.empty:
@@ -92,8 +93,8 @@ def plot_kline(
 	if atr:
 		indicator_types.append('atr')
 	logger.info(
-		"Plot panels: overlays ma=%s ema=%s boll=%s; indicators rsi=%s macd=%s atr=%s",
-		ma, ema, boll, rsi, macd, atr,
+		"Plot panels: overlays ma=%s ema=%s boll=%s support_breakout=%s; indicators rsi=%s macd=%s atr=%s",
+		ma, ema, boll, support_breakout, rsi, macd, atr,
 	)
 
 	n_panels = 1 + len(indicator_types)
@@ -184,6 +185,16 @@ def plot_kline(
 			ax.plot(dates, bands['lower'].values, color='purple', linewidth=0.8, linestyle='--')
 		except Exception:
 			logger.warning('Failed to compute BOLL with %s', boll)
+
+	if support_breakout:
+		try:
+			win, temp = support_breakout
+			support_line = SUPPORT_LINE(df['Close'], window=win, temperature=temp)
+			resist_line = RESISTANCE_LINE(df['Close'], window=win, temperature=temp)
+			ax.plot(dates, support_line.values, color='#1f77b4', linewidth=1.0, linestyle='-.', label=f'Support{win}@{temp}')
+			ax.plot(dates, resist_line.values, color='#ff7f0e', linewidth=1.0, linestyle='-.', label=f'Resist{win}@{temp}')
+		except Exception:
+			logger.warning('Failed to compute support/resistance with %s', support_breakout)
 
 	# Legend for price panel if any overlay exists
 	handles, labels = ax.get_legend_handles_labels()
@@ -324,7 +335,7 @@ def run_plot_command(args: list[str]) -> None:
 	from src.data import fetcher as data_fetcher
 
 	if not args:
-		print("Usage: plot SYMBOL [-start YYYYMMDD] [-end YYYYMMDD] [-frame daily|weekly] [-source akshare|yfinance|csv] [-refresh] [-output file.png] [-ma 5,20] [-ema 12,26] [-boll 20,2] [-rsi 14] [-macd 12,26,9] [-atr 14]")
+		print("Usage: plot SYMBOL [-start YYYYMMDD] [-end YYYYMMDD] [-frame daily|weekly] [-source akshare|yfinance|csv] [-refresh] [-output file.png] [-ma 5,20] [-ema 12,26] [-boll 20,2] [-rsi 14] [-macd 12,26,9] [-atr 14] [-sr window,temp]")
 		return
 
 	symbol = args[0]
@@ -340,6 +351,7 @@ def run_plot_command(args: list[str]) -> None:
 	rsi_list: list[int] | None = None
 	macd_params: tuple[int, int, int] | None = None
 	atr_window: int | None = None
+	sr_params: tuple[int, float] | None = None
 
 	i = 1
 	while i < len(args):
@@ -405,6 +417,17 @@ def run_plot_command(args: list[str]) -> None:
 			except Exception:
 				print(f"Invalid -atr value: {args[i+1]}")
 			i += 2; continue
+		if tok == '-sr' and i + 1 < len(args):
+			raw = args[i+1]
+			parts = [x.strip() for x in raw.split(',') if x.strip()]
+			if len(parts) == 2:
+				try:
+					sr_params = (int(parts[0]), float(parts[1]))
+				except Exception:
+					print(f"Invalid -sr value: {raw}")
+			else:
+				print(f"Invalid -sr value: {raw}")
+			i += 2; continue
 		print(f"Unknown arg: {tok}")
 		i += 1
 
@@ -431,6 +454,7 @@ def run_plot_command(args: list[str]) -> None:
 			rsi=rsi_list,
 			macd=macd_params,
 			atr=atr_window,
+			support_breakout=sr_params,
 		)
 		if output:
 			print(f"Plotted {symbol} ({frame}) rows={len(df)} -> {output}")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 from typing import Dict
 
-from src.strategy.calc_lines import CLOSE, MA, MACD
+from src.strategy.calc_lines import CLOSE, MA, MACD, SUPPORT_LINE, RESISTANCE_LINE
 from src.strategy.support import TriggerSet, crossabove, crossbelow
 from src.system.log import get_logger
 
@@ -251,3 +251,69 @@ class BuyAndHoldStrategy:
 
         self._bought = True
         return {self.symbol: qty}
+
+
+class SupportResistanceStrategy:
+    """Breakout above smoothed resistance; exit on support breakdown.
+
+    Temperature controls smoothing strength for support/resistance lines.
+    """
+
+    def __init__(self, symbol: str, window: int = 20, temperature: float = 1.0, qty: int = 100) -> None:
+        self.symbol = symbol
+        self.window = window
+        self.temperature = temperature
+        self.qty = qty
+        if window == 20:
+            logger.warning("SupportBreakoutStrategy: window uses default=20")
+        if temperature == 1.0:
+            logger.warning("SupportBreakoutStrategy: temperature uses default=1.0")
+        if qty == 100:
+            logger.warning("SupportBreakoutStrategy: qty uses default=100")
+        self._orders: Dict[str, int] = {}
+        self._triggers = TriggerSet()
+
+        self._triggers.always(
+            lambda ctx: bool(crossabove(ctx["close"], ctx["resistance"]).iloc[-1]),
+            lambda ctx: self._orders.__setitem__(self.symbol, self.qty),
+            name="breakout_buy",
+        )
+        self._triggers.always(
+            lambda ctx: bool(crossbelow(ctx["close"], ctx["support"]).iloc[-1]),
+            lambda ctx: self._orders.__setitem__(self.symbol, -self.qty),
+            name="support_exit",
+        )
+
+    def _select_price(self, history: pd.DataFrame) -> pd.Series | None:
+        if self.symbol in history.columns:
+            return CLOSE(history[[self.symbol]].rename(columns={self.symbol: "close"}))
+        if "Close" in history.columns:
+            return history["Close"]
+        if "close" in history.columns:
+            return history["close"]
+        return None
+
+    def decide(self, date: pd.Timestamp, history: pd.DataFrame) -> Dict[str, int]:
+        if history.empty:
+            return {}
+
+        price = self._select_price(history)
+        if price is None:
+            return {}
+
+        try:
+            support = SUPPORT_LINE(price, window=self.window, temperature=self.temperature)
+            resistance = RESISTANCE_LINE(price, window=self.window, temperature=self.temperature)
+        except Exception:
+            logger.exception("Failed to compute support/resistance")
+            return {}
+
+        ctx = {
+            "close": price,
+            "support": support,
+            "resistance": resistance,
+        }
+
+        self._orders.clear()
+        self._triggers.run(ctx)
+        return dict(self._orders)

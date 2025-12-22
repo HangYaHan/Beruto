@@ -1,9 +1,11 @@
-"""Lightweight trigger/statement helpers for strategy DSL semantics.
+"""Strategy DSL helpers: triggers, on-bar hooks, and edge detectors.
 
-Provides a per-instance trigger container `TriggerSet` to avoid global
-state collisions when multiple strategies coexist. The legacy global API
-(always/on_bar/run_triggers) remains for backward compatibility by using
-an internal shared TriggerSet.
+This module centralizes tiny building blocks used by strategies and the
+backtest engine: per-instance `TriggerSet` to register actions without
+global state collisions, backward-compatible global helpers
+(`always`/`on_bar`/`run_triggers`), simple assertions/assignments, and
+edge-detection utilities (`crossabove`/`crossbelow` plus PnL-based
+`drawdown`/`take_profit`) that fire only on rising edges.
 """
 
 from __future__ import annotations
@@ -98,6 +100,38 @@ def crossbelow(a: pd.Series, b: pd.Series) -> pd.Series:
 	return (a < b) & (a.shift(1) >= b.shift(1))
 
 
+def drawdown(return_pct: pd.Series, threshold_pct: float, *, never: bool = False) -> pd.Series:
+	"""Edge-trigger: return falls to or below -threshold_pct (pct as decimal).
+
+	When `never` is True, returns an all-False series so the trigger never fires.
+	"""
+	series = pd.Series(return_pct, copy=False)
+	if never:
+		return pd.Series(False, index=series.index)
+	if threshold_pct <= 0:
+		raise ValueError("threshold_pct must be positive")
+	threshold = abs(threshold_pct)
+	breach = series <= -threshold
+	prev_ok = series.shift(1) > -threshold
+	return (breach & prev_ok).fillna(False)
+
+
+def take_profit(return_pct: pd.Series, threshold_pct: float, *, never: bool = False) -> pd.Series:
+	"""Edge-trigger: return reaches or exceeds threshold_pct (pct as decimal).
+
+	When `never` is True, returns an all-False series so the trigger never fires.
+	"""
+	series = pd.Series(return_pct, copy=False)
+	if never:
+		return pd.Series(False, index=series.index)
+	if threshold_pct <= 0:
+		raise ValueError("threshold_pct must be positive")
+	threshold = abs(threshold_pct)
+	breach = series >= threshold
+	prev_below = series.shift(1) < threshold
+	return (breach & prev_below).fillna(False)
+
+
 __all__ = [
 	"Trigger",
 	"TriggerSet",
@@ -108,4 +142,6 @@ __all__ = [
 	"assert_stmt",
 	"crossabove",
 	"crossbelow",
+	"drawdown",
+	"take_profit",
 ]
