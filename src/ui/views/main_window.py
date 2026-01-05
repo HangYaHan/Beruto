@@ -22,6 +22,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.setWindowIcon(QtGui.QIcon(str(icon_path)))
         self.resize(1920, 1080)
         self.move(0, 0)
+        self._tooltip_delay_ms = 350  # shorten tooltip hover delay (~half default)
+        self._tooltip_targets: Dict[QtWidgets.QWidget, str] = {}
+        # Set early to avoid AttributeError when eventFilter is triggered before console creation.
+        self.input: QtWidgets.QLineEdit | None = None
         self.symbol_map: Dict[str, str] = self._load_symbol_cache()
         self.name_to_code: Dict[str, str] = {name: code for code, name in self.symbol_map.items()}
         self.suggestion_list = [f"{code} {name}" for code, name in self.symbol_map.items()]
@@ -58,11 +62,28 @@ class MainWindow(QtWidgets.QMainWindow):
         bar.setStyleSheet(
             "QMenuBar { padding: 0px; margin: 0px; spacing: 0px; border: 0px; border-radius: 0px; background: transparent; }"
             "QMenuBar::item { padding: 4px 8px; margin: 0px; border: 0px; border-radius: 0px; }"
+            "QMenu::icon { padding: 0px; margin: 0px; width: 0px; }"
+            "QMenu::item { padding: 6px 18px; margin: 2px 6px; min-width: 114px; }"
+            "QMenu::item:selected { background: palette(Highlight); color: palette(HighlightedText); }"
         )
 
         file_menu = bar.addMenu("File")
+        new_action = QtGui.QAction("New Strategy", self)
+        new_action.triggered.connect(self._new_strategy)
+        open_action = QtGui.QAction("Open Strategy", self)
+        open_action.triggered.connect(self._open_strategy)
+        save_action = QtGui.QAction("Save Strategy", self)
+        save_action.triggered.connect(self._save_strategy)
+        close_action = QtGui.QAction("Close Strategy", self)
+        close_action.triggered.connect(self._close_strategy)
         exit_action = QtGui.QAction("Exit", self)
         exit_action.triggered.connect(self.close)
+
+        file_menu.addAction(new_action)
+        file_menu.addAction(open_action)
+        file_menu.addAction(save_action)
+        file_menu.addAction(close_action)
+        file_menu.addSeparator()
         file_menu.addAction(exit_action)
 
         help_menu = bar.addMenu("Help")
@@ -81,7 +102,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.symbol_list_widget.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
+        self.factor_list_widget = QtWidgets.QListWidget()
+        self.factor_list_widget.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         tabs.addTab(self._build_symbols_tab(), "Symbols")
+        tabs.addTab(self._build_factors_tab(), "Factors")
 
         layout.addWidget(tabs)
         layout.addWidget(self._build_action_buttons())
@@ -95,16 +121,16 @@ class MainWindow(QtWidgets.QMainWindow):
         hbox.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
 
         buttons = [
-            ("Add Symbol", self._make_colored_icon("add", "#2ecc71")),
-            ("Delete Symbol", self._make_colored_icon("remove", "#e74c3c")),
-            ("Run", self._make_colored_icon("run", "#f1c40f")),
+            ("Add Symbol", "Add symbol to list", self._make_colored_icon("add", "#2ecc71")),
+            ("Delete Symbol", "Delete selected symbols", self._make_colored_icon("remove", "#e74c3c")),
+            ("Run", "Run current strategy", self._make_colored_icon("run", "#f1c40f")),
         ]
         hbox.addStretch(1)
-        for text, icon in buttons:
+        for text, tooltip, icon in buttons:
             btn = QtWidgets.QToolButton()
             btn.setIcon(icon)
             btn.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
-            btn.setToolTip(text)
+            self._register_tooltip_target(btn, tooltip)
             btn.setAutoRaise(True)
             btn.setIconSize(QtCore.QSize(26, 26))
             if text == "Add Symbol":
@@ -159,6 +185,22 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(label)
 
         vbox.addWidget(self.symbol_list_widget)
+        return widget
+
+    def _build_factors_tab(self) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        vbox = QtWidgets.QVBoxLayout(widget)
+        vbox.setContentsMargins(8, 8, 8, 8)
+        vbox.setSpacing(6)
+
+        label = QtWidgets.QLabel("Factors")
+        label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        vbox.addWidget(label)
+
+        self.factor_list_widget.clear()
+        vbox.addWidget(self.factor_list_widget)
+
         return widget
 
     def _build_chart_placeholder(self) -> QtWidgets.QWidget:
@@ -230,7 +272,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._append_log(f"Command error: {exc}")
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # noqa: N802 (Qt override)
-        if obj is self.input and event.type() == QtCore.QEvent.Type.KeyPress:
+        if obj in self._tooltip_targets:
+            if event.type() == QtCore.QEvent.Type.Enter:
+                QtCore.QTimer.singleShot(
+                    self._tooltip_delay_ms, lambda w=obj: self._show_tooltip_if_hovered(w)
+                )
+            elif event.type() == QtCore.QEvent.Type.Leave:
+                QtWidgets.QToolTip.hideText()
+
+        if self.input is not None and obj is self.input and event.type() == QtCore.QEvent.Type.KeyPress:
             key_event = event  # type: ignore[assignment]
             if key_event.key() == QtCore.Qt.Key.Key_Up:
                 self._recall_history(direction=-1)
@@ -239,6 +289,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._recall_history(direction=1)
                 return True
         return super().eventFilter(obj, event)
+
+    def _register_tooltip_target(self, widget: QtWidgets.QWidget, text: str) -> None:
+        self._tooltip_targets[widget] = text
+        widget.setToolTip(text)
+        widget.installEventFilter(self)
+
+    def _show_tooltip_if_hovered(self, widget: QtCore.QObject) -> None:
+        if isinstance(widget, QtWidgets.QWidget) and widget.underMouse():
+            QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), widget.toolTip(), widget)
 
     def _recall_history(self, direction: int) -> None:
         if not self.command_history:
@@ -257,6 +316,19 @@ class MainWindow(QtWidgets.QMainWindow):
             "About",
             "\nThis is the GUI version of Beruto.\n",
         )
+
+    # --- Strategy menu handlers ---
+    def _new_strategy(self) -> None:
+        QtWidgets.QMessageBox.information(self, "New Strategy", "TODO: create a new strategy.")
+
+    def _open_strategy(self) -> None:
+        QtWidgets.QMessageBox.information(self, "Open Strategy", "TODO: open an existing strategy.")
+
+    def _save_strategy(self) -> None:
+        QtWidgets.QMessageBox.information(self, "Save Strategy", "TODO: save the current strategy.")
+
+    def _close_strategy(self) -> None:
+        QtWidgets.QMessageBox.information(self, "Close Strategy", "TODO: close the current strategy.")
 
     # --- Symbol management ---
     def _load_symbol_cache(self) -> Dict[str, str]:
