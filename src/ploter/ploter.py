@@ -69,7 +69,7 @@ def plot_kline(
 	atr: int | None = None,
 	support_breakout: tuple[int, float] | None = None,
     trades: pd.DataFrame | None = None,
-) -> None:
+) -> str:
 	if df is None or df.empty:
 		raise ValueError('Empty DataFrame provided to plot_kline')
 	df = _normalize_columns(df)
@@ -309,6 +309,9 @@ def plot_kline(
 		except Exception as e:
 			logger.exception('Failed saving plot: %s', e)
 			raise
+        finally:
+            plt.close(fig)
+        return str(output)
 	else:
 		# Default to saving in a result run directory
 		run_dir = new_result_run_dir()
@@ -321,8 +324,9 @@ def plot_kline(
 			raise
 
 	plt.close(fig)
+	return str(out_path)
 
-def run_plot_command(args: list[str]) -> None:
+def run_plot_command(args: list[str]) -> str | None:
 	"""Parse CLI args and execute plotting.
 
 	Supported:
@@ -443,7 +447,7 @@ def run_plot_command(args: list[str]) -> None:
 		return
 
 	try:
-		plot_kline(
+		out = plot_kline(
 			df,
 			symbol=symbol,
 			frame=frame,
@@ -457,12 +461,15 @@ def run_plot_command(args: list[str]) -> None:
 			support_breakout=sr_params,
 		)
 		if output:
-			print(f"Plotted {symbol} ({frame}) rows={len(df)} -> {output}")
+			print(f"Plotted {symbol} ({frame}) rows={len(df)} -> {out}")
+			return out
 		else:
-			print(f"Plotted {symbol} ({frame}) rows={len(df)} -> saved to result run directory")
+			print(f"Plotted {symbol} ({frame}) rows={len(df)} -> {out}")
+			return out
 	except Exception as e:
 		logger.exception("Plotting failed for %s: %s", symbol, e)
 		print(f"Plot failed: {e}")
+		return None
 
 
 __all__ = ['plot_kline', 'run_plot_command']

@@ -99,6 +99,7 @@ def run_backtest_multi(
 	annual_mmf_rate: float = 0.0,
 	lot_size: int = 1,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+	
 	pm = PortfolioManager(
 		cash=initial_cash,
 		commission=commission,
@@ -106,6 +107,7 @@ def run_backtest_multi(
 		allow_short=allow_short,
 		initial_positions=initial_positions,
 	)
+	
 	records = []
 	fills_records: list[dict] = []
 	dates = _union_sorted_indices(data_map.values())

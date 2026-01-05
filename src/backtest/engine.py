@@ -24,6 +24,7 @@ def load_task(task_name: str) -> Dict[str, Any]:
 	if not task_path.exists():
 		raise FileNotFoundError(f"Task file not found: {task_path}")
 	with task_path.open('r', encoding='utf-8') as f:
+		print(f"Loading task from {task_path}")
 		return json.load(f)
 
 
@@ -49,6 +50,9 @@ def run_task(task_name: str):
 	if not symbols:
 		raise ValueError("No symbols defined in universe.symbols")
 
+	print("Config files loaded successfully.")
+	print(f"Running backtest task: {task_name} on symbols: {symbols}")
+
 	strategies = []
 	for scfg in strategies_cfg:
 		obj = load_strategy(scfg['module'], scfg['class'], scfg.get('params', {}))
@@ -62,6 +66,8 @@ def run_task(task_name: str):
 	end_date = calendar_cfg.get('end') or data_cfg.get('end')
 	price_field = exec_cfg.get('price_field', 'Close')
 
+	print(f"Strategies loaded: {[s['name'] for s in strategies]}")
+	   
 	data_map = {}
 	for sym in symbols:
 		df = fetcher.get_history(
@@ -83,16 +89,24 @@ def run_task(task_name: str):
 		logger.info("Data fetched: symbol=%s rows=%s start=%s end=%s", sym, len(df), df.index.min(), df.index.max())
 		data_map[sym] = df
 
+	print("Symbol Data fetched for all symbols.")
+
 	commission = portfolio_cfg.get('commission', 0.0)
 	slippage = portfolio_cfg.get('slippage', 0.0)
 	initial_cash = portfolio_cfg.get('cash', 1_000_000.0)
 	allow_short = portfolio_cfg.get('allow_short', True)
 	initial_positions = portfolio_cfg.get('initial_positions', {})
 
+	print(f"Starting backtest with initial cash: {initial_cash:.2f}, commission: {commission:.4f}, slippage: {slippage:.4f}, allow_short: {allow_short}")
 	logger.info("Running backtest: cash=%.2f commission=%.4f slippage=%.4f allow_short=%s", initial_cash, commission, slippage, allow_short)
+
+	# ---
+	# Run backtest
+
 	run_dir = new_result_run_dir()
 	annual_mmf_rate = exec_cfg.get('annual_mmf_rate', 0.02)
 	lot_size = exec_cfg.get('lot_size', 1)
+	print(f"Running backtest, results will be saved to: {run_dir}")
 	curve, trades = run_backtest_multi(
 		strategies,
 		data_map,
@@ -112,6 +126,10 @@ def run_task(task_name: str):
 		max(df.index.max() for df in data_map.values()),
 		final['equity'], final['cash'], final['position_value'], final['stock_return_pct']
 	)
+
+	# ---
+	# Visualize and persist results
+
 	# Persist equity curve
 	curve_path = run_dir / "equity_curve.csv"
 	curve.to_csv(curve_path)
