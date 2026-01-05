@@ -1,0 +1,55 @@
+{
+  "universe": {
+    "symbols": [
+      "sh600519"
+    ],
+    "data": {
+      "source": "akshare",
+      "interval": "1d",
+      "cache": true,
+      "refresh": false
+    }
+  },
+  "strategies": [
+    {
+      "name": "sma",
+      "module": "src.strategy.yahan_strategies",
+      "class": "SMAStrategy",
+      "params": {
+        "symbol": "sh600519",
+        "short_window": 5,
+        "long_window": 20,
+        "qty": 100
+      },
+      "routing": {
+        "on": [
+          "sh600519"
+        ],
+        "priority": 1
+      }
+    }
+  ],
+  "portfolio": {
+    "cash": 1000000.0,
+    "commission": 0.0005,
+    "slippage": 0.0005,
+    "allow_short": false,
+    "initial_positions": {
+      "sh600519": 0
+    }
+  },
+  "execution": {
+    "mode": "close",
+    "time": "15:00:00",
+    "lot_size": 1,
+    "price_field": "Close"
+  },
+  "calendar": {
+    "start": "2024-01-01",
+    "end": "2025-12-31"
+  },
+  "outputs": {
+    "save_equity_curve": true,
+    "save_orders": true
+  }
+}

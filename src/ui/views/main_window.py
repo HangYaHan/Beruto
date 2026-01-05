@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from typing import List
+from pathlib import Path
+from typing import Dict
+
+import akshare as ak
+import pandas as pd
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from src.system.CLI import execute_command
@@ -13,7 +17,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.command_history: list[str] = []
         self.history_index: int | None = None
         self.setWindowTitle("Beruto")
+        icon_path = Path(__file__).resolve().parents[2] / "ui" / "icon.png"
+        if icon_path.exists():
+            self.setWindowIcon(QtGui.QIcon(str(icon_path)))
         self.resize(1920, 1080)
+        self.move(0, 0)
+        self.symbol_map: Dict[str, str] = self._load_symbol_cache()
+        self.name_to_code: Dict[str, str] = {name: code for code, name in self.symbol_map.items()}
+        self.suggestion_list = [f"{code} {name}" for code, name in self.symbol_map.items()]
+        self.completer_model = QtCore.QStringListModel(self.suggestion_list)
+        self._build_menu()
         self._build_layout()
 
     def _build_layout(self) -> None:
@@ -21,8 +34,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(central)
 
         outer = QtWidgets.QVBoxLayout(central)
-        outer.setContentsMargins(8, 8, 8, 8)
-        outer.setSpacing(8)
+        outer.setContentsMargins(8, 0, 8, 8)
+        outer.setSpacing(4)
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.setSpacing(8)
@@ -40,48 +53,112 @@ class MainWindow(QtWidgets.QMainWindow):
         outer.addLayout(top_row, stretch=4)
         outer.addWidget(self.console, stretch=1)
 
+    def _build_menu(self) -> None:
+        bar = self.menuBar()
+        bar.setStyleSheet(
+            "QMenuBar { padding: 0px; margin: 0px; spacing: 0px; border: 0px; border-radius: 0px; background: transparent; }"
+            "QMenuBar::item { padding: 4px 8px; margin: 0px; border: 0px; border-radius: 0px; }"
+        )
+
+        file_menu = bar.addMenu("File")
+        exit_action = QtGui.QAction("Exit", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        help_menu = bar.addMenu("Help")
+        about_action = QtGui.QAction("About", self)
+        about_action.triggered.connect(self._show_about_dialog)
+        help_menu.addAction(about_action)
+
     def _build_left_tabs(self) -> QtWidgets.QWidget:
         wrapper = QtWidgets.QFrame()
         layout = QtWidgets.QVBoxLayout(wrapper)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
 
         tabs = QtWidgets.QTabWidget()
-        tabs.addTab(self._task_table(), "All Tasks")
-        for symbol in ["SZ000001", "SH600519", "SZ300750"]:
-            tabs.addTab(self._task_table(filter_symbol=symbol), symbol)
+        self.symbol_list_widget = QtWidgets.QListWidget()
+        self.symbol_list_widget.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        tabs.addTab(self._build_symbols_tab(), "Symbols")
 
         layout.addWidget(tabs)
+        layout.addWidget(self._build_action_buttons())
         return wrapper
 
-    def _task_table(self, filter_symbol: str | None = None) -> QtWidgets.QWidget:
+    def _build_action_buttons(self) -> QtWidgets.QWidget:
+        bar = QtWidgets.QWidget()
+        hbox = QtWidgets.QHBoxLayout(bar)
+        hbox.setContentsMargins(0, 6, 0, 0)
+        hbox.setSpacing(2)
+        hbox.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
+
+        buttons = [
+            ("Add Symbol", self._make_colored_icon("add", "#2ecc71")),
+            ("Delete Symbol", self._make_colored_icon("remove", "#e74c3c")),
+            ("Run", self._make_colored_icon("run", "#f1c40f")),
+        ]
+        hbox.addStretch(1)
+        for text, icon in buttons:
+            btn = QtWidgets.QToolButton()
+            btn.setIcon(icon)
+            btn.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
+            btn.setToolTip(text)
+            btn.setAutoRaise(True)
+            btn.setIconSize(QtCore.QSize(26, 26))
+            if text == "Add Symbol":
+                btn.clicked.connect(self._on_add_symbol)
+            elif text == "Delete Symbol":
+                btn.clicked.connect(self._on_delete_symbol)
+            hbox.addWidget(btn)
+
+        hbox.addStretch(1)
+        return bar
+
+    def _make_colored_icon(self, kind: str, color: str) -> QtGui.QIcon:
+        """Create a simple colored icon for add/remove/run without external assets."""
+        size = 30
+        pixmap = QtGui.QPixmap(size, size)
+        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        pen = QtGui.QPen(QtGui.QColor(color))
+        pen.setWidth(3)
+        painter.setPen(pen)
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(color)))
+
+        center = size // 2
+        offset = 9
+        if kind == "add":
+            painter.drawLine(center, offset, center, size - offset)
+            painter.drawLine(offset, center, size - offset, center)
+        elif kind == "remove":
+            painter.drawLine(offset, center, size - offset, center)
+        elif kind == "run":
+            points = [
+                QtCore.QPoint(offset, offset),
+                QtCore.QPoint(size - offset, center),
+                QtCore.QPoint(offset, size - offset),
+            ]
+            painter.drawPolygon(QtGui.QPolygon(points))
+        painter.end()
+
+        return QtGui.QIcon(pixmap)
+
+    def _build_symbols_tab(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         vbox = QtWidgets.QVBoxLayout(widget)
-        table = QtWidgets.QTableWidget()
-        headers = ["Symbol", "Strategy", "Status", "Progress", "ETA"]
-        table.setColumnCount(len(headers))
-        table.setHorizontalHeaderLabels(headers)
-        table.verticalHeader().setVisible(False)
-        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-        table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setShowGrid(True)
-        table.setAlternatingRowColors(True)
-        sample_rows = self._sample_tasks()
-        rows: List[List[str]] = []
-        for row in sample_rows:
-            if filter_symbol and row[0] != filter_symbol:
-                continue
-            rows.append(row)
-        table.setRowCount(len(rows))
-        for r, row in enumerate(rows):
-            for c, value in enumerate(row):
-                item = QtWidgets.QTableWidgetItem(value)
-                if value in {"Running", "Done", "Failed"}:
-                    color = {"Running": "#27c2d7", "Done": "#2ecc71", "Failed": "#e74c3c"}.get(value, "#d8d8d8")
-                    item.setForeground(QtGui.QBrush(QtGui.QColor(color)))
-                table.setItem(r, c, item)
-        table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
-        vbox.addWidget(table)
+        vbox.setContentsMargins(8, 8, 8, 8)
+        vbox.setSpacing(6)
+
+        label = QtWidgets.QLabel("Symbols")
+        label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        vbox.addWidget(label)
+
+        vbox.addWidget(self.symbol_list_widget)
         return widget
 
     def _build_chart_placeholder(self) -> QtWidgets.QWidget:
@@ -174,10 +251,131 @@ class MainWindow(QtWidgets.QMainWindow):
     def _append_log(self, text: str) -> None:
         self.log_view.appendPlainText(text)
 
-    def _sample_tasks(self) -> List[List[str]]:
-        return [
-            ["SZ000001", "Grid Search", "Running", "42%", "02:10"],
-            ["SH600519", "ML Sweep", "Done", "100%", "--"],
-            ["SZ300750", "Baseline", "Failed", "68%", "--"],
-            ["SZ000001", "SMA-20/60", "Done", "100%", "--"],
+    def _show_about_dialog(self) -> None:
+        QtWidgets.QMessageBox.information(
+            self,
+            "About",
+            "\nThis is the GUI version of Beruto.\n",
+        )
+
+    # --- Symbol management ---
+    def _load_symbol_cache(self) -> Dict[str, str]:
+        """Load A-share symbols (plus ETF) from cache; fetch via akshare if missing."""
+        cache_path = Path(__file__).resolve().parents[3] / "data" / "symbols_a.csv"
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        if cache_path.exists():
+            try:
+                df = pd.read_csv(cache_path, dtype=str)
+                if {"code", "name"}.issubset(df.columns):
+                    return dict(zip(df["code"], df["name"]))
+            except Exception:
+                pass  # fallback to fetch
+
+        try:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Downloading",
+                "Downloading A-share and ETF symbols to local cache...",
+            )
+            a_df = ak.stock_zh_a_spot_em()[["代码", "名称"]]
+            etf_df = ak.fund_etf_spot_em()[["代码", "名称"]]
+            df = pd.concat([a_df, etf_df], ignore_index=True)
+            df = df.drop_duplicates(subset=["代码"]).rename(columns={"代码": "code", "名称": "name"})
+            df = df.sort_values("code")
+            df.to_csv(cache_path, index=False, encoding="utf-8")
+            return dict(zip(df["code"], df["name"]))
+        except Exception:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Symbol Load Failed",
+                "Failed to load symbols from akshare. Please check network and retry.",
+            )
+            return {}
+
+    def _on_add_symbol(self) -> None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Add Symbol")
+        dialog.resize(220, 140)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        input_box = QtWidgets.QLineEdit()
+        input_box.setPlaceholderText("Search by code or name...")
+        completer = QtWidgets.QCompleter(self.completer_model, dialog)
+        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
+        input_box.setCompleter(completer)
+
+        def handle_completion(text: str) -> None:
+            # Ensure only code is placed into the line edit when a suggestion is chosen.
+            code = text.split()[0].strip().upper()
+            input_box.setText(code)
+
+        completer.activated.connect(handle_completion)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+
+        def accept() -> None:
+            code = self._resolve_input_to_code(input_box.text())
+            if code not in self.symbol_map:
+                QtWidgets.QMessageBox.warning(dialog, "Invalid", "Please enter a valid A-share symbol code.")
+                return
+            if self._symbol_exists(code):
+                QtWidgets.QMessageBox.information(dialog, "Duplicate", "Symbol already added.")
+                dialog.accept()
+                return
+            self._add_symbol_to_list(code)
+            dialog.accept()
+
+        buttons.accepted.connect(accept)
+        buttons.rejected.connect(dialog.reject)
+
+        layout.addWidget(input_box)
+        layout.addWidget(buttons)
+
+        dialog.exec()
+
+    def _on_delete_symbol(self) -> None:
+        items = self.symbol_list_widget.selectedItems()
+        if not items:
+            QtWidgets.QMessageBox.information(self, "Delete Symbol", "No symbol selected.")
+            return
+        for item in items:
+            row = self.symbol_list_widget.row(item)
+            self.symbol_list_widget.takeItem(row)
+
+    def _symbol_exists(self, code: str) -> bool:
+        return any(
+            self.symbol_list_widget.item(i).text().startswith(code)
+            for i in range(self.symbol_list_widget.count())
+        )
+
+    def _add_symbol_to_list(self, code: str) -> None:
+        name = self.symbol_map.get(code, "")
+        display = f"{code}  {name}" if name else code
+        self.symbol_list_widget.addItem(display)
+
+    def _resolve_input_to_code(self, text: str) -> str | None:
+        t = text.strip()
+        if not t:
+            return None
+        # Take first token as candidate code (handles "code name" from completer)
+        code_token = t.split()[0].strip().upper()
+        if code_token in self.symbol_map:
+            return code_token
+        # Exact name match
+        if t in self.name_to_code:
+            return self.name_to_code[t]
+        # Fuzzy startswith search on code or name
+        matches = [
+            c
+            for c, n in self.symbol_map.items()
+            if c.startswith(code_token) or n.startswith(t)
         ]
+        if len(matches) == 1:
+            return matches[0]
+        return None
