@@ -1,4 +1,4 @@
-"""Core time-series helper functions for strategy building.
+"""Core time-series helper functions for factor building.
 
 All functions operate on pandas Series/DataFrame and stay ASCII-only.
 """

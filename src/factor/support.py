@@ -1,6 +1,6 @@
-"""Strategy DSL helpers: triggers, on-bar hooks, and edge detectors.
+"""Factor helpers: triggers, on-bar hooks, and edge detectors.
 
-This module centralizes tiny building blocks used by strategies and the
+This module centralizes tiny building blocks used by factors and the
 backtest engine: per-instance `TriggerSet` to register actions without
 global state collisions, backward-compatible global helpers
 (`always`/`on_bar`/`run_triggers`), simple assertions/assignments, and
@@ -43,7 +43,7 @@ class Trigger:
 
 
 class TriggerSet:
-	"""Container to hold triggers and on-bar actions per strategy instance."""
+	"""Container to hold triggers and on-bar actions per factor instance."""
 
 	def __init__(self) -> None:
 		self._triggers: List[Trigger] = []

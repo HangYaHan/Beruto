@@ -1,0 +1,36 @@
+{
+  "name": "demo_plan",
+  "description": "示例策略计划：展示如何将多个因子绑定到不同标的。",
+  "symbols": [
+    "sh600519",
+    "sz002475"
+  ],
+  "factors": [
+    {
+      "name": "sma_on_sh600519",
+      "module": "src.factor.builtin",
+      "class": "SMAFactor",
+      "symbols": ["sh600519"],
+      "params": {
+        "short_window": 5,
+        "long_window": 20,
+        "qty": 100
+      }
+    },
+    {
+      "name": "macd_on_sz002475",
+      "module": "src.factor.builtin",
+      "class": "MACDFactor",
+      "symbols": ["sz002475"],
+      "params": {
+        "fast": 12,
+        "slow": 26,
+        "signal": 9,
+        "qty": 100
+      }
+    }
+  ],
+  "metadata": {
+    "note": "时间范围、执行参数等应在回测管线中另行指定，不属于策略计划。"
+  }
+}

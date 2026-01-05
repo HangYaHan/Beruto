@@ -8,14 +8,13 @@ import pandas as pd
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from src.system.CLI import execute_command
+from src.ui.views.console_panel import ConsolePanel
 
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, default_task: str | None = None, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self.default_task = default_task
-        self.command_history: list[str] = []
-        self.history_index: int | None = None
         self.setWindowTitle("Beruto")
         icon_path = Path(__file__).resolve().parents[2] / "ui" / "icon.png"
         if icon_path.exists():
@@ -68,13 +67,13 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         file_menu = bar.addMenu("File")
-        new_action = QtGui.QAction("New Strategy", self)
+        new_action = QtGui.QAction("New Plan", self)
         new_action.triggered.connect(self._new_strategy)
-        open_action = QtGui.QAction("Open Strategy", self)
+        open_action = QtGui.QAction("Open Plan", self)
         open_action.triggered.connect(self._open_strategy)
-        save_action = QtGui.QAction("Save Strategy", self)
+        save_action = QtGui.QAction("Save Plan", self)
         save_action.triggered.connect(self._save_strategy)
-        close_action = QtGui.QAction("Close Strategy", self)
+        close_action = QtGui.QAction("Close Plan", self)
         close_action.triggered.connect(self._close_strategy)
         exit_action = QtGui.QAction("Exit", self)
         exit_action.triggered.connect(self.close)
@@ -123,7 +122,7 @@ class MainWindow(QtWidgets.QMainWindow):
         buttons = [
             ("Add Symbol", "Add symbol to list", self._make_colored_icon("add", "#2ecc71")),
             ("Delete Symbol", "Delete selected symbols", self._make_colored_icon("remove", "#e74c3c")),
-            ("Run", "Run current strategy", self._make_colored_icon("run", "#f1c40f")),
+            ("Run", "Run current plan", self._make_colored_icon("run", "#f1c40f")),
         ]
         hbox.addStretch(1)
         for text, tooltip, icon in buttons:
@@ -230,44 +229,21 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(placeholder, stretch=1)
         return frame
 
-    def _build_console(self) -> QtWidgets.QWidget:
-        panel = QtWidgets.QFrame()
-        panel.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
-        layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(6)
+    def _build_console(self) -> ConsolePanel:
+        console = ConsolePanel(on_command=self._handle_command, parent=self)
+        self.log_view = console.log_view
+        self.input = console.input
+        return console
 
-        self.log_view = QtWidgets.QPlainTextEdit()
-        self.log_view.setReadOnly(True)
-        self.log_view.setPlainText("Console ready. Type commands below.")
-
-        self.input = QtWidgets.QLineEdit()
-        self.input.setPlaceholderText("Enter command...")
-        self.input.installEventFilter(self)
-
-        layout.addWidget(self.log_view, stretch=3)
-        layout.addWidget(self.input)
-
-        self.input.returnPressed.connect(self._handle_submit)
-        return panel
-
-    def _handle_submit(self) -> None:
-        cmd = self.input.text().strip()
-        if not cmd:
-            return
-        self._append_log(f"$ {cmd}")
-        self.command_history.append(cmd)
-        self.history_index = None
-        self.input.clear()
+    def _handle_command(self, cmd: str) -> None:
         try:
             res = execute_command(cmd, write=self._append_log)
-            if res:
-                if res.get("type") in {"image", "images"}:
-                    paths = res.get("paths") or [res.get("path")]
-                    if paths:
-                        self._append_log("Output files:")
-                        for p in paths:
-                            self._append_log(f"  {p}")
+            if res and res.get("type") in {"image", "images"}:
+                paths = res.get("paths") or [res.get("path")]
+                if paths:
+                    self._append_log("Output files:")
+                    for path in paths:
+                        self._append_log(f"  {path}")
         except Exception as exc:  # safety guard
             self._append_log(f"Command error: {exc}")
 
@@ -279,15 +255,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
             elif event.type() == QtCore.QEvent.Type.Leave:
                 QtWidgets.QToolTip.hideText()
-
-        if self.input is not None and obj is self.input and event.type() == QtCore.QEvent.Type.KeyPress:
-            key_event = event  # type: ignore[assignment]
-            if key_event.key() == QtCore.Qt.Key.Key_Up:
-                self._recall_history(direction=-1)
-                return True
-            if key_event.key() == QtCore.Qt.Key.Key_Down:
-                self._recall_history(direction=1)
-                return True
         return super().eventFilter(obj, event)
 
     def _register_tooltip_target(self, widget: QtWidgets.QWidget, text: str) -> None:
@@ -299,14 +266,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if isinstance(widget, QtWidgets.QWidget) and widget.underMouse():
             QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), widget.toolTip(), widget)
 
-    def _recall_history(self, direction: int) -> None:
-        if not self.command_history:
-            return
-        if self.history_index is None:
-            self.history_index = len(self.command_history)
-        self.history_index = max(0, min(len(self.command_history) - 1, self.history_index + direction))
-        self.input.setText(self.command_history[self.history_index])
-
     def _append_log(self, text: str) -> None:
         self.log_view.appendPlainText(text)
 
@@ -317,18 +276,18 @@ class MainWindow(QtWidgets.QMainWindow):
             "\nThis is the GUI version of Beruto.\n",
         )
 
-    # --- Strategy menu handlers ---
+    # --- Plan menu handlers ---
     def _new_strategy(self) -> None:
-        QtWidgets.QMessageBox.information(self, "New Strategy", "TODO: create a new strategy.")
+        QtWidgets.QMessageBox.information(self, "New Plan", "TODO: create a new strategy plan.")
 
     def _open_strategy(self) -> None:
-        QtWidgets.QMessageBox.information(self, "Open Strategy", "TODO: open an existing strategy.")
+        QtWidgets.QMessageBox.information(self, "Open Plan", "TODO: open an existing strategy plan.")
 
     def _save_strategy(self) -> None:
-        QtWidgets.QMessageBox.information(self, "Save Strategy", "TODO: save the current strategy.")
+        QtWidgets.QMessageBox.information(self, "Save Plan", "TODO: save the current strategy plan.")
 
     def _close_strategy(self) -> None:
-        QtWidgets.QMessageBox.information(self, "Close Strategy", "TODO: close the current strategy.")
+        QtWidgets.QMessageBox.information(self, "Close Plan", "TODO: close the current strategy plan.")
 
     # --- Symbol management ---
     def _load_symbol_cache(self) -> Dict[str, str]:

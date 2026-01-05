@@ -1,57 +1,8 @@
 {
-  "universe": {
-    "symbols": [
-      "<SYMBOL>"
-    ],
-    "data": {
-      "source": "<DATA_SOURCE>",
-      "interval": "1d",
-      "cache": true,
-      "refresh": false
-    }
-  },
-  "strategies": [
-    {
-      "name": "main",
-      "module": "<MODULE_PATH>",
-      "class": "<CLASS_NAME>",
-      "params": {
-        "symbol": "<SYMBOL>"
-      },
-      "routing": {
-        "on": [
-          "<SYMBOL>"
-        ],
-        "priority": 1
-      }
-    }
-  ],
-  "portfolio": {
-    "cash": 1000000,
-    "commission": 0.0005,
-    "slippage": 0.0005,
-    "allow_short": false,
-    "initial_positions": {
-      "<SYMBOL>": 0
-    },
-    "risk": {
-      "max_position_pct": 0.3,
-      "max_symbol_qty": 100000
-    }
-  },
-  "execution": {
-    "mode": "close",
-    "time": "15:00:00",
-    "lot_size": 1,
-    "price_field": "Close"
-  },
-  "calendar": {
-    "start": "2024-01-01",
-    "end": "2025-12-31"
-  },
-  "outputs": {
-    "save_equity_curve": true,
-    "save_orders": true,
-    "folder": "results"
+  "name": "base_factor",
+  "module": "src.factor.builtin",
+  "class": "<CLASS_NAME>",
+  "params": {
+    "symbol": "<SYMBOL>"
   }
 }

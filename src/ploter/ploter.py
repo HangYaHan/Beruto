@@ -15,7 +15,7 @@ from matplotlib.patches import Rectangle
 from matplotlib import dates as mdates
 from src.system.log import get_logger
 from src.system.startup import new_result_run_dir
-from src.strategy.calc_lines import MA, EMA, RSI, MACD, BOLL, ATR, SUPPORT_LINE, RESISTANCE_LINE
+from src.factor.calc_lines import MA, EMA, RSI, MACD, BOLL, ATR, SUPPORT_LINE, RESISTANCE_LINE
 
 logger = get_logger(__name__)
 

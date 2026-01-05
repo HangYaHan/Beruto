@@ -3,17 +3,15 @@ from __future__ import annotations
 import pandas as pd
 from typing import Dict
 
-from src.strategy.calc_lines import CLOSE, MA, MACD, SUPPORT_LINE, RESISTANCE_LINE
-from src.strategy.support import TriggerSet, crossabove, crossbelow
+from src.factor.calc_lines import CLOSE, MA, MACD, SUPPORT_LINE, RESISTANCE_LINE
+from src.factor.support import TriggerSet, crossabove, crossbelow
 from src.system.log import get_logger
 
 logger = get_logger(__name__)
 
 
-class SMAStrategy:
-    """
-    Simple MA crossover strategy using TriggerSet to avoid global state.
-    """
+class SMAFactor:
+    """Simple MA crossover factor using TriggerSet to avoid global state."""
 
     def __init__(self, symbol: str, short_window: int = 5, long_window: int = 20, qty: int = 100) -> None:
         self.symbol = symbol
@@ -21,11 +19,11 @@ class SMAStrategy:
         self.long_window = long_window
         self.qty = qty
         if short_window == 5:
-            logger.warning("SMAStrategy: short_window uses default=5")
+            logger.warning("SMAFactor: short_window uses default=5")
         if long_window == 20:
-            logger.warning("SMAStrategy: long_window uses default=20")
+            logger.warning("SMAFactor: long_window uses default=20")
         if qty == 100:
-            logger.warning("SMAStrategy: qty uses default=100")
+            logger.warning("SMAFactor: qty uses default=100")
         self._orders: Dict[str, int] = {}
         self._triggers = TriggerSet()
 
@@ -68,8 +66,8 @@ class SMAStrategy:
         return dict(self._orders)
 
 
-class MACDStrategy:
-    """MACD crossover strategy (MACD line vs signal line)."""
+class MACDFactor:
+    """MACD crossover factor (MACD line vs signal line)."""
 
     def __init__(self, symbol: str, fast: int = 12, slow: int = 26, signal: int = 9, qty: int = 100) -> None:
         self.symbol = symbol
@@ -78,13 +76,13 @@ class MACDStrategy:
         self.signal = signal
         self.qty = qty
         if fast == 12:
-            logger.warning("MACDStrategy: fast uses default=12")
+            logger.warning("MACDFactor: fast uses default=12")
         if slow == 26:
-            logger.warning("MACDStrategy: slow uses default=26")
+            logger.warning("MACDFactor: slow uses default=26")
         if signal == 9:
-            logger.warning("MACDStrategy: signal uses default=9")
+            logger.warning("MACDFactor: signal uses default=9")
         if qty == 100:
-            logger.warning("MACDStrategy: qty uses default=100")
+            logger.warning("MACDFactor: qty uses default=100")
         self._orders: Dict[str, int] = {}
         self._triggers = TriggerSet()
 
@@ -127,7 +125,7 @@ class MACDStrategy:
         return dict(self._orders)
 
 
-class MACDMonotoneStrategy:
+class MACDMonotoneFactor:
     """MACD variant: 3-bar monotone moves with size scaled by distance from zero."""
 
     def __init__(
@@ -148,17 +146,17 @@ class MACDMonotoneStrategy:
         self.sensitivity = sensitivity
         self.max_multiplier = max_multiplier
         if fast == 12:
-            logger.warning("MACDMonotoneStrategy: fast uses default=12")
+            logger.warning("MACDMonotoneFactor: fast uses default=12")
         if slow == 26:
-            logger.warning("MACDMonotoneStrategy: slow uses default=26")
+            logger.warning("MACDMonotoneFactor: slow uses default=26")
         if signal == 9:
-            logger.warning("MACDMonotoneStrategy: signal uses default=9")
+            logger.warning("MACDMonotoneFactor: signal uses default=9")
         if base_qty == 100:
-            logger.warning("MACDMonotoneStrategy: base_qty uses default=100")
+            logger.warning("MACDMonotoneFactor: base_qty uses default=100")
         if sensitivity == 10.0:
-            logger.warning("MACDMonotoneStrategy: sensitivity uses default=10.0")
+            logger.warning("MACDMonotoneFactor: sensitivity uses default=10.0")
         if max_multiplier == 3.0:
-            logger.warning("MACDMonotoneStrategy: max_multiplier uses default=3.0")
+            logger.warning("MACDMonotoneFactor: max_multiplier uses default=3.0")
 
     def _select_price(self, history: pd.DataFrame) -> pd.Series | None:
         if self.symbol in history.columns:
@@ -211,7 +209,7 @@ class MACDMonotoneStrategy:
         return {}
 
 
-class BuyAndHoldStrategy:
+class BuyAndHoldFactor:
     """Use initial cash to buy as many shares as possible on the first bar, then hold."""
 
     def __init__(self, symbol: str, initial_cash: float = 1_000_000.0, commission: float = 0.0, slippage: float = 0.0) -> None:
@@ -221,11 +219,11 @@ class BuyAndHoldStrategy:
         self.slippage = slippage
         self._bought = False
         if initial_cash == 1_000_000.0:
-            logger.warning("BuyAndHoldStrategy: initial_cash uses default=1_000_000")
+            logger.warning("BuyAndHoldFactor: initial_cash uses default=1_000_000")
         if commission == 0.0:
-            logger.warning("BuyAndHoldStrategy: commission uses default=0")
+            logger.warning("BuyAndHoldFactor: commission uses default=0")
         if slippage == 0.0:
-            logger.warning("BuyAndHoldStrategy: slippage uses default=0")
+            logger.warning("BuyAndHoldFactor: slippage uses default=0")
 
     def decide(self, date: pd.Timestamp, history: pd.DataFrame) -> Dict[str, int]:
         if self._bought or history.empty:
@@ -253,7 +251,7 @@ class BuyAndHoldStrategy:
         return {self.symbol: qty}
 
 
-class SupportResistanceStrategy:
+class SupportResistanceFactor:
     """Breakout above smoothed resistance; exit on support breakdown.
 
     Temperature controls smoothing strength for support/resistance lines.
@@ -265,11 +263,11 @@ class SupportResistanceStrategy:
         self.temperature = temperature
         self.qty = qty
         if window == 20:
-            logger.warning("SupportBreakoutStrategy: window uses default=20")
+            logger.warning("SupportResistanceFactor: window uses default=20")
         if temperature == 1.0:
-            logger.warning("SupportBreakoutStrategy: temperature uses default=1.0")
+            logger.warning("SupportResistanceFactor: temperature uses default=1.0")
         if qty == 100:
-            logger.warning("SupportBreakoutStrategy: qty uses default=100")
+            logger.warning("SupportResistanceFactor: qty uses default=100")
         self._orders: Dict[str, int] = {}
         self._triggers = TriggerSet()
 
@@ -317,3 +315,12 @@ class SupportResistanceStrategy:
         self._orders.clear()
         self._triggers.run(ctx)
         return dict(self._orders)
+
+
+__all__ = [
+    "SMAFactor",
+    "MACDFactor",
+    "MACDMonotoneFactor",
+    "BuyAndHoldFactor",
+    "SupportResistanceFactor",
+]

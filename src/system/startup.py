@@ -6,7 +6,7 @@ from .log import get_logger
 
 logger = get_logger(__name__)
 
-REQUIRED_DIRS = ("tasks", "data", "logs", "result")
+REQUIRED_DIRS = ("tasks", "strategies", "data", "logs", "result")
 
 def ensure_workspace_dirs(root: Path | None = None, extra_dirs: Iterable[str] | None = None) -> None:
     """Ensure required workspace directories exist under project root.

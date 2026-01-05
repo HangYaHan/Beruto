@@ -12,7 +12,7 @@ HELP_TEXT = """FeedbackTrader interactive CLI
 Commands:
     help, h, ?       Show this help
     config, cfg      Show or set configuration
-    backtest, bt     Run a backtest
+    backtest, bt     Load a strategy plan (preview only)
     plot, pt         Plot cached OHLC data
     remove, rm       Clean everything (results, cache, logs)
     exit, quit, q    Exit the CLI
@@ -28,40 +28,26 @@ def print_help() -> None:
     print(HELP_TEXT)
 
 def _exec_backtest(args: list[str], write: Callable[[str], None]) -> Dict[str, object]:
-    from src.backtest.engine import run_task
+    from src.backtest.engine import run_task, summarize_plan
     if not args:
-        write("Usage: backtest TASK_NAME (without .json, from tasks folder)")
-        return {"type": "text", "content": "缺少参数：TASK_NAME"}
-    task_name = args[0]
+        write("Usage: backtest PLAN_NAME (from strategies folder, without .json)")
+        return {"type": "text", "content": "缺少参数：PLAN_NAME"}
+    plan_name = args[0]
     try:
-        curve = run_task(task_name)
-        final = curve.iloc[-1]
-        write("Backtest done.")
-        write(f"  Final equity: {final['equity']:.2f}")
-        write(f"  Cash: {final['cash']:.2f}")
-        write(f"  Position value: {final['position_value']:.2f}")
-        write(f"  Stock return (pct change of position value): {final['stock_return_pct']*100:.2f}%")
-        # Heuristically find latest run dir; show equity plot if present
-        from pathlib import Path
-        result_root = Path(__file__).resolve().parents[2] / 'result'
-        latest_dir: Optional[Path] = None
-        if result_root.exists():
-            dirs = [p for p in result_root.iterdir() if p.is_dir()]
-            if dirs:
-                latest_dir = max(dirs, key=lambda p: p.stat().st_mtime)
-        images = []
-        if latest_dir:
-            for name in ("equity_plot.png", "equity_baselines.png"):
-                p = latest_dir / name
-                if p.exists():
-                    images.append(str(p))
-        return {"type": "images" if len(images) > 1 else ("image" if images else "text"),
-                "paths": images, "path": images[0] if images else "",
-                "content": "Backtest finished."}
+        plan = run_task(plan_name)
+        summary = summarize_plan(plan)
+        write(f"Plan loaded: {summary['name']}")
+        write(f"Symbols: {', '.join(summary['symbols']) or '(none)'}")
+        if summary.get("factors"):
+            for f in summary["factors"]:
+                write(f"  - {f['name']}: {f['module']}.{f['class']} -> {', '.join(f['symbols'])}")
+                if f.get("params"):
+                    write(f"    params: {f['params']}")
+        return {"type": "text", "content": f"Plan {summary['name']} loaded ({len(summary['factors'])} factors)."}
     except Exception as e:
-        logger.exception("Backtest failed: %s", e)
-        write(f"Backtest failed: {e}")
-        return {"type": "text", "content": f"Backtest failed: {e}"}
+        logger.exception("Plan load failed: %s", e)
+        write(f"Plan load failed: {e}")
+        return {"type": "text", "content": f"Plan load failed: {e}"}
 
 
 def _exec_plot(args: list[str], write: Callable[[str], None]) -> Dict[str, object]:

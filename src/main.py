@@ -26,7 +26,7 @@ def main(args: Any = None) -> int:
 
     parser = argparse.ArgumentParser(description="Beruto application entrypoint")
     parser.add_argument("--cli", action="store_true", help="Run in CLI mode instead of UI")
-    parser.add_argument("--task", help="Preselect task for UI run", default=None)
+    parser.add_argument("--task", help="Preselect strategy plan for UI run", default=None)
     parsed = parser.parse_args(args)
 
     ensure_workspace_dirs()
