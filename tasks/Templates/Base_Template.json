@@ -1,8 +1,0 @@
-{
-  "name": "base_factor",
-  "module": "src.factor.builtin",
-  "class": "<CLASS_NAME>",
-  "params": {
-    "symbol": "<SYMBOL>"
-  }
-}

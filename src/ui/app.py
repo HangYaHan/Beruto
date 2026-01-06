@@ -16,11 +16,6 @@ def _set_windows_app_id(app_id: str) -> None:
         except Exception:
             pass
 
-try:
-    import qdarktheme
-except Exception:  # pragma: no cover
-    qdarktheme = None
-
 from src.ui.views.main_window import MainWindow
 
 
@@ -37,8 +32,6 @@ def run_ui(default_task: Optional[str] = None) -> int:
             break
     if icon_path:
         app.setWindowIcon(QtGui.QIcon(str(icon_path)))
-    if qdarktheme:
-        qdarktheme.setup_theme(custom_colors={"primary": "#27c2d7"})
     window = MainWindow(default_task=default_task)
     window.show()
     return app.exec()

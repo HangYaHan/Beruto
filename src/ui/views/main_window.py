@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict
+from datetime import datetime
 
 import akshare as ak
 import pandas as pd
@@ -9,6 +10,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from src.system.CLI import execute_command
 from src.ui.views.console_panel import ConsolePanel
+from src.ui.views.kline_panel import KLineChartPanel, KlineDownloadWorker
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -23,28 +25,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self.move(0, 0)
         self._tooltip_delay_ms = 350  # shorten tooltip hover delay (~half default)
         self._tooltip_targets: Dict[QtWidgets.QWidget, str] = {}
+        self.console_toggle_action: QtGui.QAction | None = None
         # Set early to avoid AttributeError when eventFilter is triggered before console creation.
         self.input: QtWidgets.QLineEdit | None = None
+        self.kline_cache_dir = Path(__file__).resolve().parents[3] / "data" / "kline"
+        self.kline_cache_dir.mkdir(parents=True, exist_ok=True)
+        self._download_threads: list[QtCore.QThread] = []
+        self._download_workers: list[QtCore.QObject] = []
         self.symbol_map: Dict[str, str] = self._load_symbol_cache()
         self.name_to_code: Dict[str, str] = {name: code for code, name in self.symbol_map.items()}
         self.suggestion_list = [f"{code} {name}" for code, name in self.symbol_map.items()]
         self.completer_model = QtCore.QStringListModel(self.suggestion_list)
         self._build_menu()
         self._build_layout()
+        self._sync_console_action_label(False)
 
     def _build_layout(self) -> None:
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
 
         outer = QtWidgets.QVBoxLayout(central)
-        outer.setContentsMargins(8, 0, 8, 8)
-        outer.setSpacing(4)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(6)
 
         top_row = QtWidgets.QHBoxLayout()
         top_row.setSpacing(8)
 
-        self.left_panel = self._build_left_tabs()
-        self.middle_panel = self._build_chart_placeholder()
+        self.left_panel = self._build_left_panel()
+        self.middle_panel = self._build_middle_tabs()
         self.right_panel = self._build_info_wall()
 
         top_row.addWidget(self.left_panel, stretch=1)
@@ -52,9 +60,10 @@ class MainWindow(QtWidgets.QMainWindow):
         top_row.addWidget(self.right_panel, stretch=1)
 
         self.console = self._build_console()
+        self.console.setVisible(False)
 
-        outer.addLayout(top_row, stretch=4)
-        outer.addWidget(self.console, stretch=1)
+        outer.addLayout(top_row, stretch=5)
+        outer.addWidget(self.console, stretch=2)
 
     def _build_menu(self) -> None:
         bar = self.menuBar()
@@ -86,17 +95,22 @@ class MainWindow(QtWidgets.QMainWindow):
         file_menu.addAction(exit_action)
 
         help_menu = bar.addMenu("Help")
+        self.console_toggle_action = QtGui.QAction("Hide Console", self)
+        self.console_toggle_action.triggered.connect(self._toggle_console)
+        help_menu.addAction(self.console_toggle_action)
+        help_menu.addSeparator()
         about_action = QtGui.QAction("About", self)
         about_action.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_action)
 
-    def _build_left_tabs(self) -> QtWidgets.QWidget:
+    def _build_left_panel(self) -> QtWidgets.QWidget:
         wrapper = QtWidgets.QFrame()
         layout = QtWidgets.QVBoxLayout(wrapper)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout.setSpacing(6)
 
         tabs = QtWidgets.QTabWidget()
+
         self.symbol_list_widget = QtWidgets.QListWidget()
         self.symbol_list_widget.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
@@ -105,11 +119,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.factor_list_widget.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
+
+        tabs.addTab(self._build_universe_tab(), "Universe")
         tabs.addTab(self._build_symbols_tab(), "Symbols")
         tabs.addTab(self._build_factors_tab(), "Factors")
+        tabs.addTab(self._build_plan_tab(), "Plan / Arbiter")
 
         layout.addWidget(tabs)
-        layout.addWidget(self._build_action_buttons())
         return wrapper
 
     def _build_action_buttons(self) -> QtWidgets.QWidget:
@@ -122,7 +138,6 @@ class MainWindow(QtWidgets.QMainWindow):
         buttons = [
             ("Add Symbol", "Add symbol to list", self._make_colored_icon("add", "#2ecc71")),
             ("Delete Symbol", "Delete selected symbols", self._make_colored_icon("remove", "#e74c3c")),
-            ("Run", "Run current plan", self._make_colored_icon("run", "#f1c40f")),
         ]
         hbox.addStretch(1)
         for text, tooltip, icon in buttons:
@@ -140,6 +155,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hbox.addStretch(1)
         return bar
+
+    def _build_universe_tab(self) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        layout.addWidget(self._make_card("Universe Rules", "Dynamic pool filters: ST/PT, IPO age, suspension, delisting (placeholder)"))
+        layout.addWidget(self._make_card("Constituents & Calendar", "Index constituents and trading calendar (placeholder)"))
+        return widget
 
     def _make_colored_icon(self, kind: str, color: str) -> QtGui.QIcon:
         """Create a simple colored icon for add/remove/run without external assets."""
@@ -184,6 +209,12 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(label)
 
         vbox.addWidget(self.symbol_list_widget)
+        vbox.addWidget(self._build_action_buttons())
+        vbox.addWidget(self._make_card("Tips", "Search by code or name; list shows current selection (placeholder)"))
+        self.symbol_list_widget.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.symbol_list_widget.customContextMenuRequested.connect(self._show_symbol_context_menu)
+        self.symbol_list_widget.setDragEnabled(True)
+        self.symbol_list_widget.setDefaultDropAction(QtCore.Qt.DropAction.CopyAction)
         return widget
 
     def _build_factors_tab(self) -> QtWidgets.QWidget:
@@ -200,19 +231,30 @@ class MainWindow(QtWidgets.QMainWindow):
         self.factor_list_widget.clear()
         vbox.addWidget(self.factor_list_widget)
 
+        vbox.addWidget(self._make_card("Factor Pipeline", "Enable/disable, grouping, params, signal coverage (placeholder)"))
+
         return widget
 
-    def _build_chart_placeholder(self) -> QtWidgets.QWidget:
-        frame = QtWidgets.QFrame()
-        frame.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
-        vbox = QtWidgets.QVBoxLayout(frame)
+    def _build_plan_tab(self) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        vbox = QtWidgets.QVBoxLayout(widget)
         vbox.setContentsMargins(8, 8, 8, 8)
-        vbox.setSpacing(6)
-        title = QtWidgets.QLabel("Chart Area (1920x1080 layout placeholder)")
-        title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 16px; color: #dddddd")
-        vbox.addWidget(title, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-        return frame
+        vbox.setSpacing(8)
+
+        vbox.addWidget(self._make_card("Plan", "Plan name, universe, benchmark (placeholder)"))
+        vbox.addWidget(self._make_card("Arbiter", "Weights, thresholds, debounce parameters (placeholder)"))
+        vbox.addWidget(self._make_card("Scheduler", "Rebalance frequency and triggers (placeholder)"))
+        vbox.addWidget(self._make_card("Save / Apply", "Save draft / apply to backtest buttons (placeholder)"))
+        return widget
+
+    def _build_middle_tabs(self) -> QtWidgets.QWidget:
+        tabs = QtWidgets.QTabWidget()
+        self.kline_panel = KLineChartPanel(on_symbol_requested=self._view_kline_for_code, parent=self)
+        tabs.addTab(self.kline_panel, "Chart")
+        tabs.addTab(self._make_card("Signals", "Oracle signals aligned on timeline (placeholder)"), "Signals")
+        tabs.addTab(self._make_card("Portfolio", "Target vs current holdings, rebalance diff (placeholder)"), "Portfolio")
+        tabs.addTab(self._make_card("Orders", "Executor order preview and constraint checks (placeholder)"), "Orders")
+        return tabs
 
     def _build_info_wall(self) -> QtWidgets.QWidget:
         frame = QtWidgets.QFrame()
@@ -220,20 +262,42 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox = QtWidgets.QVBoxLayout(frame)
         vbox.setContentsMargins(8, 8, 8, 8)
         vbox.setSpacing(8)
-        header = QtWidgets.QLabel("Info Wall")
-        header.setStyleSheet("font-weight: bold; font-size: 14px;")
-        vbox.addWidget(header)
-        placeholder = QtWidgets.QLabel("Metrics / Positions / Task Queue")
-        placeholder.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
-        placeholder.setWordWrap(True)
-        vbox.addWidget(placeholder, stretch=1)
+
+        vbox.addWidget(self._make_card("Live Status", "Cash / Equity / Exposure / Turnover / T+1 sellable (placeholder)"))
+        vbox.addWidget(self._make_card("Risk Monitor", "Limit-up/down blocks, slippage/fee estimate, max DD, concentration (placeholder)"))
+        vbox.addWidget(self._make_card("Task Queue", "Plan runs, data updates, download progress (placeholder)"))
         return frame
 
-    def _build_console(self) -> ConsolePanel:
+    def _make_card(self, title: str, body: str) -> QtWidgets.QWidget:
+        card = QtWidgets.QFrame()
+        card.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        card.setObjectName("card")
+        vbox = QtWidgets.QVBoxLayout(card)
+        vbox.setContentsMargins(10, 10, 10, 10)
+        vbox.setSpacing(6)
+
+        header = QtWidgets.QLabel(title)
+        header.setStyleSheet("font-weight: bold;")
+        vbox.addWidget(header)
+
+        body_label = QtWidgets.QLabel(body)
+        body_label.setWordWrap(True)
+        body_label.setStyleSheet("color: #c8c8c8;")
+        vbox.addWidget(body_label)
+        return card
+
+    def _build_console(self) -> QtWidgets.QWidget:
+        tab = QtWidgets.QTabWidget()
         console = ConsolePanel(on_command=self._handle_command, parent=self)
         self.log_view = console.log_view
         self.input = console.input
-        return console
+        tab.addTab(console, "Console")
+
+        recent_log = QtWidgets.QPlainTextEdit()
+        recent_log.setReadOnly(True)
+        recent_log.setPlainText("Recent task logs placeholder: filter (error/warn/info), copy all")
+        tab.addTab(recent_log, "Recent Logs")
+        return tab
 
     def _handle_command(self, cmd: str) -> None:
         try:
@@ -266,8 +330,29 @@ class MainWindow(QtWidgets.QMainWindow):
         if isinstance(widget, QtWidgets.QWidget) and widget.underMouse():
             QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), widget.toolTip(), widget)
 
+    def _toggle_console(self) -> None:
+        if not hasattr(self, "console") or self.console is None:
+            return
+        new_visible = not self.console.isVisible()
+        self.console.setVisible(new_visible)
+        self._sync_console_action_label(new_visible)
+        if new_visible and self.input:
+            self.input.setFocus()
+
+    def _sync_console_action_label(self, visible: bool) -> None:
+        if self.console_toggle_action is None:
+            return
+        self.console_toggle_action.setText("Hide Console" if visible else "Show Console")
+
     def _append_log(self, text: str) -> None:
         self.log_view.appendPlainText(text)
+
+    def _log(self, text: str) -> None:
+        self._append_log(text)
+        try:
+            print(text)
+        except Exception:
+            pass
 
     def _show_about_dialog(self) -> None:
         QtWidgets.QMessageBox.information(
@@ -379,6 +464,16 @@ class MainWindow(QtWidgets.QMainWindow):
             row = self.symbol_list_widget.row(item)
             self.symbol_list_widget.takeItem(row)
 
+    def _show_symbol_context_menu(self, pos: QtCore.QPoint) -> None:
+        item = self.symbol_list_widget.itemAt(pos)
+        if item is None:
+            return
+        code = item.text().split()[0]
+        menu = QtWidgets.QMenu(self)
+        action = menu.addAction("View K-line")
+        action.triggered.connect(lambda: self._view_kline_for_code(code))
+        menu.exec(self.symbol_list_widget.mapToGlobal(pos))
+
     def _symbol_exists(self, code: str) -> bool:
         return any(
             self.symbol_list_widget.item(i).text().startswith(code)
@@ -410,3 +505,91 @@ class MainWindow(QtWidgets.QMainWindow):
         if len(matches) == 1:
             return matches[0]
         return None
+
+    def _view_kline_for_code(self, code: str | None) -> None:
+        if not code:
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Symbol code is empty.")
+            return
+        normalized = code.strip().upper()
+        if normalized not in self.symbol_map:
+            QtWidgets.QMessageBox.warning(self, "Not Found", f"Symbol {normalized} is not in the list.")
+            return
+        cache_path = self.kline_cache_dir / f"{normalized}.csv"
+        if cache_path.exists():
+            try:
+                df = self._load_kline_from_cache(cache_path)
+                self._log(f"Loaded {normalized} K-line from cache {cache_path}")
+                self.kline_panel.display_symbol(normalized, df)
+                return
+            except Exception as exc:  # fallback to fresh download
+                self._log(f"Failed to read cached K-line for {normalized}: {exc}; downloading fresh data...")
+        self._download_kline_with_progress(normalized, cache_path)
+
+    def _load_kline_from_cache(self, path: Path) -> pd.DataFrame:
+        df = pd.read_csv(path)
+        if "date" not in df.columns:
+            raise ValueError("Invalid cache file format: missing date column")
+        df["date"] = pd.to_datetime(df["date"])
+        required = {"open", "high", "low", "close"}
+        if not required.issubset(df.columns):
+            raise ValueError("Invalid cache file format: missing price columns")
+        return df
+
+    def _download_kline_with_progress(self, code: str, cache_path: Path) -> None:
+        progress = QtWidgets.QProgressDialog("正在下载K线数据...", None, 0, 100, self)
+        progress.setWindowTitle("Downloading")
+        progress.setCancelButton(None)
+        progress.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        worker = KlineDownloadWorker(
+            code=code,
+            start_date="20240101",
+            end_date=datetime.now().strftime("%Y%m%d"),
+            cache_path=cache_path,
+        )
+        thread = QtCore.QThread(self)
+        worker.moveToThread(thread)
+
+        worker.progress.connect(progress.setValue)
+        worker.message.connect(progress.setLabelText)
+        worker.message.connect(self._log)
+
+        def handle_success(df: pd.DataFrame) -> None:
+            progress.setValue(100)
+            progress.close()
+            self._log(f"{code} K-line downloaded to {cache_path}")
+            self.kline_panel.display_symbol(code, df)
+
+        def handle_error(msg: str) -> None:
+            progress.close()
+            QtWidgets.QMessageBox.warning(self, "Download Failed", msg)
+            self._log(f"Failed to download {code}: {msg}")
+
+        worker.finished.connect(handle_success)
+        worker.error.connect(handle_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+
+        def cleanup_thread() -> None:
+            try:
+                self._download_threads.remove(thread)
+            except ValueError:
+                pass
+            try:
+                self._download_workers.remove(worker)
+            except ValueError:
+                pass
+            thread.deleteLater()
+
+        thread.finished.connect(cleanup_thread)
+        thread.started.connect(worker.run)
+
+        self._download_threads.append(thread)
+        self._download_workers.append(worker)
+        self._log(f"Downloading {code} K-line via akshare from 2024-01-01 to {datetime.now().date()}...")
+        thread.start()

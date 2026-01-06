@@ -6,10 +6,6 @@ from typing import Any
 import sys
 import argparse
 from pathlib import Path
-from system.log import get_logger
-from system.startup import ensure_workspace_dirs
-
-logger = get_logger(__name__)
 
 def main(args: Any = None) -> int:
     """
@@ -20,7 +16,7 @@ def main(args: Any = None) -> int:
     Returns an exit code (int).
     """
     # When executed directly (python src/main.py), make sure project root is importable
-    if __package__ is None:
+    if __package__ is None: 
         project_root = Path(__file__).resolve().parents[1]  # Get father directory of 'src'
         sys.path.insert(0, str(project_root))
 
@@ -28,8 +24,6 @@ def main(args: Any = None) -> int:
     parser.add_argument("--cli", action="store_true", help="Run in CLI mode instead of UI")
     parser.add_argument("--task", help="Preselect strategy plan for UI run", default=None)
     parsed = parser.parse_args(args)
-
-    ensure_workspace_dirs()
 
     if parsed.cli:
         from src.system.CLI import main as cli_main
@@ -39,7 +33,6 @@ def main(args: Any = None) -> int:
         from src.ui.app import run_ui
         return run_ui(default_task=parsed.task)
     except Exception as exc:
-        logger.exception("UI failed to start: %s", exc)
         print("UI failed to start, falling back to CLI. Error:", exc)
         from src.system.CLI import main as cli_main
         return cli_main([])
