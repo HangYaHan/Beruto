@@ -13,6 +13,21 @@ from src.ui.views.console_panel import ConsolePanel
 from src.ui.views.kline_panel import KLineChartPanel, KlineDownloadWorker
 
 
+class SymbolListWidget(QtWidgets.QListWidget):
+    """List widget that drags plain text codes for the K-line drop target."""
+
+    def startDrag(self, supported_actions: QtCore.Qt.DropActions) -> None:  # noqa: D401 - Qt override
+        items = self.selectedItems()
+        if not items:
+            return
+        code = items[0].text().split()[0].strip()
+        mime = QtCore.QMimeData()
+        mime.setText(code)
+        drag = QtGui.QDrag(self)
+        drag.setMimeData(mime)
+        drag.exec(QtCore.Qt.DropAction.CopyAction)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, default_task: str | None = None, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -111,7 +126,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         tabs = QtWidgets.QTabWidget()
 
-        self.symbol_list_widget = QtWidgets.QListWidget()
+        self.symbol_list_widget = SymbolListWidget()
         self.symbol_list_widget.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
@@ -214,7 +229,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.symbol_list_widget.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.symbol_list_widget.customContextMenuRequested.connect(self._show_symbol_context_menu)
         self.symbol_list_widget.setDragEnabled(True)
+        self.symbol_list_widget.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
         self.symbol_list_widget.setDefaultDropAction(QtCore.Qt.DropAction.CopyAction)
+        self.symbol_list_widget.itemDoubleClicked.connect(
+            lambda item: self._view_kline_for_code(item.text().split()[0])
+        )
+        self._ensure_default_symbol("600519")
         return widget
 
     def _build_factors_tab(self) -> QtWidgets.QWidget:
@@ -484,6 +504,10 @@ class MainWindow(QtWidgets.QMainWindow):
         name = self.symbol_map.get(code, "")
         display = f"{code}  {name}" if name else code
         self.symbol_list_widget.addItem(display)
+
+    def _ensure_default_symbol(self, code: str) -> None:
+        if code in self.symbol_map and not self._symbol_exists(code):
+            self._add_symbol_to_list(code)
 
     def _resolve_input_to_code(self, text: str) -> str | None:
         t = text.strip()

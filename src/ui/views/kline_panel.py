@@ -138,8 +138,8 @@ class KLineChartPanel(QtWidgets.QFrame):
         palette = self.palette()
         self._bg_color = palette.window().color().name()
         self._text_color = palette.text().color().name()
-        self._primary_color = "#27c2d7"  # align with qdarktheme custom primary
-        self._down_color = "#f45b69"
+        self._up_color = "#d9534f"  # A-share: red for up
+        self._down_color = "#1faf5d"  # A-share: green for down
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -149,7 +149,7 @@ class KLineChartPanel(QtWidgets.QFrame):
         header.setSpacing(6)
         self.title_label = QtWidgets.QLabel("K-line Chart")
         self.title_label.setStyleSheet("font-weight: bold; font-size: 16px;")
-        self.hint_label = QtWidgets.QLabel("Right-click a symbol or drag it here to view K-line")
+        self.hint_label = QtWidgets.QLabel("Double-click or drag a symbol to view K-line")
         self.hint_label.setStyleSheet(f"color: {self._text_color}; opacity: 0.7;")
         header.addWidget(self.title_label)
         header.addStretch(1)
@@ -166,6 +166,9 @@ class KLineChartPanel(QtWidgets.QFrame):
         self.plot.getAxis("bottom").setTextPen(pg.mkPen(self._text_color))
         self.plot.getAxis("left").setPen(pg.mkPen(self._text_color))
         self.plot.getAxis("bottom").setPen(pg.mkPen(self._text_color))
+        self.plot.setAcceptDrops(True)
+        self.plot.setAcceptDrops(True)
+        self.plot.installEventFilter(self)
         self.plot.viewport().setAcceptDrops(True)
         self.plot.viewport().installEventFilter(self)
         layout.addWidget(self.plot, stretch=1)
@@ -196,12 +199,12 @@ class KLineChartPanel(QtWidgets.QFrame):
 
         if len(timestamps) > 1:
             step = float(np.median(np.diff(timestamps)))
-            width = step * 0.6
+            width = step * 0.75  # slightly wider candles for readability
         else:
             width = 60 * 60 * 12  # half-day for single point
 
         candle_data = list(zip(timestamps, opens, highs, lows, closes))
-        item = CandlestickItem(candle_data, width, up_color=self._primary_color, down_color=self._down_color)
+        item = CandlestickItem(candle_data, width, up_color=self._up_color, down_color=self._down_color)
         self.plot.addItem(item)
 
         x_min, x_max = float(timestamps.min()), float(timestamps.max())
@@ -211,6 +214,12 @@ class KLineChartPanel(QtWidgets.QFrame):
         self.plot.setYRange(y_min - padding, y_max + padding)
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:  # noqa: N802 - Qt override
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent) -> None:  # noqa: N802 - Qt override
         if event.mimeData().hasText():
             event.acceptProposedAction()
         else:
@@ -227,9 +236,12 @@ class KLineChartPanel(QtWidgets.QFrame):
         event.acceptProposedAction()
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # noqa: N802 - Qt override
-        if obj is self.plot.viewport():
+        if obj in (self.plot, self.plot.viewport()):
             if event.type() == QtCore.QEvent.Type.DragEnter:
                 self.dragEnterEvent(event)  # type: ignore[arg-type]
+                return True
+            if event.type() == QtCore.QEvent.Type.DragMove:
+                self.dragMoveEvent(event)  # type: ignore[arg-type]
                 return True
             if event.type() == QtCore.QEvent.Type.Drop:
                 self.dropEvent(event)  # type: ignore[arg-type]
