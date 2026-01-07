@@ -11,23 +11,9 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from src.system.CLI import execute_command
 from src.ui.views.console_panel import ConsolePanel
 from src.ui.views.kline_panel import KLineChartPanel, KlineDownloadWorker
-
-
-class SymbolListWidget(QtWidgets.QListWidget):
-    """List widget that drags plain text codes for the K-line drop target."""
-
-    def startDrag(self, supported_actions: QtCore.Qt.DropActions) -> None:  # noqa: D401 - Qt override
-        items = self.selectedItems()
-        if not items:
-            return
-        code = items[0].text().split()[0].strip()
-        mime = QtCore.QMimeData()
-        mime.setText(code)
-        drag = QtGui.QDrag(self)
-        drag.setMimeData(mime)
-        drag.exec(QtCore.Qt.DropAction.CopyAction)
-
-
+from src.ui.views.plan_wizard import PlanWizardDialog
+from src.ui.views.symbol_panel import SymbolsPanel
+from src.ui.views.ui_utils import make_card
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, default_task: str | None = None, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -45,14 +31,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.input: QtWidgets.QLineEdit | None = None
         self.kline_cache_dir = Path(__file__).resolve().parents[3] / "data" / "kline"
         self.kline_cache_dir.mkdir(parents=True, exist_ok=True)
+        self.symbol_store_path = Path(__file__).resolve().parents[3] / "data" / "saved_symbols.txt"
+        self.symbol_store_path.parent.mkdir(parents=True, exist_ok=True)
+        self.saved_symbol_codes: set[str] = self._load_saved_symbol_codes()
         self._download_threads: list[QtCore.QThread] = []
         self._download_workers: list[QtCore.QObject] = []
         self.symbol_map: Dict[str, str] = self._load_symbol_cache()
         self.name_to_code: Dict[str, str] = {name: code for code, name in self.symbol_map.items()}
         self.suggestion_list = [f"{code} {name}" for code, name in self.symbol_map.items()]
-        self.completer_model = QtCore.QStringListModel(self.suggestion_list)
         self._build_menu()
         self._build_layout()
+        self._populate_saved_symbols()
         self._sync_console_action_label(False)
 
     def _build_layout(self) -> None:
@@ -126,10 +115,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         tabs = QtWidgets.QTabWidget()
 
-        self.symbol_list_widget = SymbolListWidget()
-        self.symbol_list_widget.setSelectionMode(
-            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
-        )
         self.factor_list_widget = QtWidgets.QListWidget()
         self.factor_list_widget.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
@@ -143,99 +128,28 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(tabs)
         return wrapper
 
-    def _build_action_buttons(self) -> QtWidgets.QWidget:
-        bar = QtWidgets.QWidget()
-        hbox = QtWidgets.QHBoxLayout(bar)
-        hbox.setContentsMargins(0, 6, 0, 0)
-        hbox.setSpacing(2)
-        hbox.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
-
-        buttons = [
-            ("Add Symbol", "Add symbol to list", self._make_colored_icon("add", "#2ecc71")),
-            ("Delete Symbol", "Delete selected symbols", self._make_colored_icon("remove", "#e74c3c")),
-        ]
-        hbox.addStretch(1)
-        for text, tooltip, icon in buttons:
-            btn = QtWidgets.QToolButton()
-            btn.setIcon(icon)
-            btn.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
-            self._register_tooltip_target(btn, tooltip)
-            btn.setAutoRaise(True)
-            btn.setIconSize(QtCore.QSize(26, 26))
-            if text == "Add Symbol":
-                btn.clicked.connect(self._on_add_symbol)
-            elif text == "Delete Symbol":
-                btn.clicked.connect(self._on_delete_symbol)
-            hbox.addWidget(btn)
-
-        hbox.addStretch(1)
-        return bar
-
     def _build_universe_tab(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        layout.addWidget(self._make_card("Universe Rules", "Dynamic pool filters: ST/PT, IPO age, suspension, delisting (placeholder)"))
-        layout.addWidget(self._make_card("Constituents & Calendar", "Index constituents and trading calendar (placeholder)"))
+        layout.addWidget(make_card("Universe Rules", "Dynamic pool filters: ST/PT, IPO age, suspension, delisting (placeholder)"))
+        layout.addWidget(make_card("Constituents & Calendar", "Index constituents and trading calendar (placeholder)"))
         return widget
-
-    def _make_colored_icon(self, kind: str, color: str) -> QtGui.QIcon:
-        """Create a simple colored icon for add/remove/run without external assets."""
-        size = 30
-        pixmap = QtGui.QPixmap(size, size)
-        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        pen = QtGui.QPen(QtGui.QColor(color))
-        pen.setWidth(3)
-        painter.setPen(pen)
-        painter.setBrush(QtGui.QBrush(QtGui.QColor(color)))
-
-        center = size // 2
-        offset = 9
-        if kind == "add":
-            painter.drawLine(center, offset, center, size - offset)
-            painter.drawLine(offset, center, size - offset, center)
-        elif kind == "remove":
-            painter.drawLine(offset, center, size - offset, center)
-        elif kind == "run":
-            points = [
-                QtCore.QPoint(offset, offset),
-                QtCore.QPoint(size - offset, center),
-                QtCore.QPoint(offset, size - offset),
-            ]
-            painter.drawPolygon(QtGui.QPolygon(points))
-        painter.end()
-
-        return QtGui.QIcon(pixmap)
 
     def _build_symbols_tab(self) -> QtWidgets.QWidget:
-        widget = QtWidgets.QWidget()
-        vbox = QtWidgets.QVBoxLayout(widget)
-        vbox.setContentsMargins(8, 8, 8, 8)
-        vbox.setSpacing(6)
-
-        label = QtWidgets.QLabel("Symbols")
-        label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-        label.setStyleSheet("font-weight: bold; font-size: 14px;")
-        vbox.addWidget(label)
-
-        vbox.addWidget(self.symbol_list_widget)
-        vbox.addWidget(self._build_action_buttons())
-        vbox.addWidget(self._make_card("Tips", "Search by code or name; list shows current selection (placeholder)"))
-        self.symbol_list_widget.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
-        self.symbol_list_widget.customContextMenuRequested.connect(self._show_symbol_context_menu)
-        self.symbol_list_widget.setDragEnabled(True)
-        self.symbol_list_widget.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
-        self.symbol_list_widget.setDefaultDropAction(QtCore.Qt.DropAction.CopyAction)
-        self.symbol_list_widget.itemDoubleClicked.connect(
-            lambda item: self._view_kline_for_code(item.text().split()[0])
+        self.symbols_panel = SymbolsPanel(
+            symbol_map=self.symbol_map,
+            name_to_code=self.name_to_code,
+            suggestion_list=self.suggestion_list,
+            on_symbol_added=self._handle_symbol_added,
+            on_symbols_deleted=self._handle_symbols_deleted,
+            on_symbol_view=self._view_kline_for_code,
+            register_tooltip=self._register_tooltip_target,
+            parent=self,
         )
-        self._ensure_default_symbol("600519")
-        return widget
+        return self.symbols_panel
 
     def _build_factors_tab(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
@@ -251,7 +165,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.factor_list_widget.clear()
         vbox.addWidget(self.factor_list_widget)
 
-        vbox.addWidget(self._make_card("Factor Pipeline", "Enable/disable, grouping, params, signal coverage (placeholder)"))
+        vbox.addWidget(make_card("Factor Pipeline", "Enable/disable, grouping, params, signal coverage (placeholder)"))
 
         return widget
 
@@ -261,19 +175,19 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.setContentsMargins(8, 8, 8, 8)
         vbox.setSpacing(8)
 
-        vbox.addWidget(self._make_card("Plan", "Plan name, universe, benchmark (placeholder)"))
-        vbox.addWidget(self._make_card("Arbiter", "Weights, thresholds, debounce parameters (placeholder)"))
-        vbox.addWidget(self._make_card("Scheduler", "Rebalance frequency and triggers (placeholder)"))
-        vbox.addWidget(self._make_card("Save / Apply", "Save draft / apply to backtest buttons (placeholder)"))
+        vbox.addWidget(make_card("Plan", "Plan name, universe, benchmark (placeholder)"))
+        vbox.addWidget(make_card("Arbiter", "Weights, thresholds, debounce parameters (placeholder)"))
+        vbox.addWidget(make_card("Scheduler", "Rebalance frequency and triggers (placeholder)"))
+        vbox.addWidget(make_card("Save / Apply", "Save draft / apply to backtest buttons (placeholder)"))
         return widget
 
     def _build_middle_tabs(self) -> QtWidgets.QWidget:
         tabs = QtWidgets.QTabWidget()
         self.kline_panel = KLineChartPanel(on_symbol_requested=self._view_kline_for_code, parent=self)
         tabs.addTab(self.kline_panel, "Chart")
-        tabs.addTab(self._make_card("Signals", "Oracle signals aligned on timeline (placeholder)"), "Signals")
-        tabs.addTab(self._make_card("Portfolio", "Target vs current holdings, rebalance diff (placeholder)"), "Portfolio")
-        tabs.addTab(self._make_card("Orders", "Executor order preview and constraint checks (placeholder)"), "Orders")
+        tabs.addTab(make_card("Signals", "Oracle signals aligned on timeline (placeholder)"), "Signals")
+        tabs.addTab(make_card("Portfolio", "Target vs current holdings, rebalance diff (placeholder)"), "Portfolio")
+        tabs.addTab(make_card("Orders", "Executor order preview and constraint checks (placeholder)"), "Orders")
         return tabs
 
     def _build_info_wall(self) -> QtWidgets.QWidget:
@@ -283,28 +197,10 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.setContentsMargins(8, 8, 8, 8)
         vbox.setSpacing(8)
 
-        vbox.addWidget(self._make_card("Live Status", "Cash / Equity / Exposure / Turnover / T+1 sellable (placeholder)"))
-        vbox.addWidget(self._make_card("Risk Monitor", "Limit-up/down blocks, slippage/fee estimate, max DD, concentration (placeholder)"))
-        vbox.addWidget(self._make_card("Task Queue", "Plan runs, data updates, download progress (placeholder)"))
+        vbox.addWidget(make_card("Live Status", "Cash / Equity / Exposure / Turnover / T+1 sellable (placeholder)"))
+        vbox.addWidget(make_card("Risk Monitor", "Limit-up/down blocks, slippage/fee estimate, max DD, concentration (placeholder)"))
+        vbox.addWidget(make_card("Task Queue", "Plan runs, data updates, download progress (placeholder)"))
         return frame
-
-    def _make_card(self, title: str, body: str) -> QtWidgets.QWidget:
-        card = QtWidgets.QFrame()
-        card.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
-        card.setObjectName("card")
-        vbox = QtWidgets.QVBoxLayout(card)
-        vbox.setContentsMargins(10, 10, 10, 10)
-        vbox.setSpacing(6)
-
-        header = QtWidgets.QLabel(title)
-        header.setStyleSheet("font-weight: bold;")
-        vbox.addWidget(header)
-
-        body_label = QtWidgets.QLabel(body)
-        body_label.setWordWrap(True)
-        body_label.setStyleSheet("color: #c8c8c8;")
-        vbox.addWidget(body_label)
-        return card
 
     def _build_console(self) -> QtWidgets.QWidget:
         tab = QtWidgets.QTabWidget()
@@ -383,7 +279,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # --- Plan menu handlers ---
     def _new_strategy(self) -> None:
-        QtWidgets.QMessageBox.information(self, "New Plan", "TODO: create a new strategy plan.")
+        dlg = PlanWizardDialog(self)
+        dlg.exec()
 
     def _open_strategy(self) -> None:
         QtWidgets.QMessageBox.information(self, "Open Plan", "TODO: open an existing strategy plan.")
@@ -428,107 +325,64 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             return {}
 
-    def _on_add_symbol(self) -> None:
-        dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("Add Symbol")
-        dialog.resize(220, 140)
-        layout = QtWidgets.QVBoxLayout(dialog)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+    def _load_saved_symbol_codes(self) -> set[str]:
+        try:
+            return {
+                line.strip().upper()
+                for line in self.symbol_store_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            }
+        except FileNotFoundError:
+            return set()
+        except Exception:
+            return set()
 
-        input_box = QtWidgets.QLineEdit()
-        input_box.setPlaceholderText("Search by code or name...")
-        completer = QtWidgets.QCompleter(self.completer_model, dialog)
-        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
-        input_box.setCompleter(completer)
+    def _persist_saved_symbols(self) -> None:
+        try:
+            self.symbol_store_path.write_text(
+                "\n".join(sorted(self.saved_symbol_codes)),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            self._log(f"Failed to persist symbols to {self.symbol_store_path}: {exc}")
 
-        def handle_completion(text: str) -> None:
-            # Ensure only code is placed into the line edit when a suggestion is chosen.
-            code = text.split()[0].strip().upper()
-            input_box.setText(code)
-
-        completer.activated.connect(handle_completion)
-
-        buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Ok
-            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
-        )
-
-        def accept() -> None:
-            code = self._resolve_input_to_code(input_box.text())
+    def _populate_saved_symbols(self) -> None:
+        if not self.saved_symbol_codes or not hasattr(self, "symbols_panel"):
+            return
+        for code in sorted(self.saved_symbol_codes):
             if code not in self.symbol_map:
-                QtWidgets.QMessageBox.warning(dialog, "Invalid", "Please enter a valid A-share symbol code.")
-                return
-            if self._symbol_exists(code):
-                QtWidgets.QMessageBox.information(dialog, "Duplicate", "Symbol already added.")
-                dialog.accept()
-                return
-            self._add_symbol_to_list(code)
-            dialog.accept()
+                self._log(f"Symbol {code} is saved locally but not in the current universe cache.")
+            self.symbols_panel.add_symbol_display(code)
 
-        buttons.accepted.connect(accept)
-        buttons.rejected.connect(dialog.reject)
-
-        layout.addWidget(input_box)
-        layout.addWidget(buttons)
-
-        dialog.exec()
-
-    def _on_delete_symbol(self) -> None:
-        items = self.symbol_list_widget.selectedItems()
-        if not items:
-            QtWidgets.QMessageBox.information(self, "Delete Symbol", "No symbol selected.")
+    def _add_symbol_to_saved(self, code: str) -> None:
+        if code in self.saved_symbol_codes:
             return
-        for item in items:
-            row = self.symbol_list_widget.row(item)
-            self.symbol_list_widget.takeItem(row)
+        self.saved_symbol_codes.add(code)
+        self._persist_saved_symbols()
 
-    def _show_symbol_context_menu(self, pos: QtCore.QPoint) -> None:
-        item = self.symbol_list_widget.itemAt(pos)
-        if item is None:
+    def _remove_symbols_from_saved(self, codes: list[str]) -> None:
+        changed = False
+        for code in codes:
+            if code in self.saved_symbol_codes:
+                self.saved_symbol_codes.remove(code)
+                changed = True
+            cache_path = self.kline_cache_dir / f"{code}.csv"
+            if cache_path.exists():
+                try:
+                    cache_path.unlink()
+                    self._log(f"Deleted local data for {code} at {cache_path}")
+                except Exception as exc:
+                    self._log(f"Failed to delete {cache_path}: {exc}")
+        if changed:
+            self._persist_saved_symbols()
+    def _handle_symbol_added(self, code: str) -> None:
+        self._add_symbol_to_saved(code)
+        self._download_kline_if_missing(code)
+
+    def _handle_symbols_deleted(self, codes: list[str]) -> None:
+        if not codes:
             return
-        code = item.text().split()[0]
-        menu = QtWidgets.QMenu(self)
-        action = menu.addAction("View K-line")
-        action.triggered.connect(lambda: self._view_kline_for_code(code))
-        menu.exec(self.symbol_list_widget.mapToGlobal(pos))
-
-    def _symbol_exists(self, code: str) -> bool:
-        return any(
-            self.symbol_list_widget.item(i).text().startswith(code)
-            for i in range(self.symbol_list_widget.count())
-        )
-
-    def _add_symbol_to_list(self, code: str) -> None:
-        name = self.symbol_map.get(code, "")
-        display = f"{code}  {name}" if name else code
-        self.symbol_list_widget.addItem(display)
-
-    def _ensure_default_symbol(self, code: str) -> None:
-        if code in self.symbol_map and not self._symbol_exists(code):
-            self._add_symbol_to_list(code)
-
-    def _resolve_input_to_code(self, text: str) -> str | None:
-        t = text.strip()
-        if not t:
-            return None
-        # Take first token as candidate code (handles "code name" from completer)
-        code_token = t.split()[0].strip().upper()
-        if code_token in self.symbol_map:
-            return code_token
-        # Exact name match
-        if t in self.name_to_code:
-            return self.name_to_code[t]
-        # Fuzzy startswith search on code or name
-        matches = [
-            c
-            for c, n in self.symbol_map.items()
-            if c.startswith(code_token) or n.startswith(t)
-        ]
-        if len(matches) == 1:
-            return matches[0]
-        return None
+        self._remove_symbols_from_saved(codes)
 
     def _view_kline_for_code(self, code: str | None) -> None:
         if not code:
@@ -548,6 +402,13 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception as exc:  # fallback to fresh download
                 self._log(f"Failed to read cached K-line for {normalized}: {exc}; downloading fresh data...")
         self._download_kline_with_progress(normalized, cache_path)
+
+    def _download_kline_if_missing(self, code: str) -> None:
+        cache_path = self.kline_cache_dir / f"{code}.csv"
+        if cache_path.exists():
+            self._log(f"Skip download: {code} cache already exists at {cache_path}")
+            return
+        self._download_kline_with_progress(code, cache_path)
 
     def _load_kline_from_cache(self, path: Path) -> pd.DataFrame:
         df = pd.read_csv(path)
