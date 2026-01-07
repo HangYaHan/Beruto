@@ -1,30 +1,53 @@
 from __future__ import annotations
 
-import sys
-from typing import NoReturn
-
-from .log import get_logger
-from .startup import ensure_workspace_dirs
-
-logger = get_logger(__name__)
+from typing import Callable, Dict
 
 HELP_TEXT = """FeedbackTrader interactive CLI
 Commands:
     help, h, ?       Show this help
-    config, cfg      Show or set configuration
-    backtest, bt     Run a backtest
-    plot, pt         Plot cached OHLC data
+    echo <text>      Echo the provided text
     exit, quit, q    Exit the CLI
 
-For detailed all command usage, see docs/COMMANDS.md
-
-If you just want to see something quick, try:
-    plot sh600000 --frame weekly
+Backtest / plot commands are removed while the engine and data interfaces are being redesigned.
 """
 
 def print_help() -> None:
     """Print help text to stdout."""
     print(HELP_TEXT)
+
+def execute_command(cmd_line: str, write: Callable[[str], None]) -> Dict[str, object] | None:
+    """Execute a single CLI command and return a result dict for UI.
+
+    Returns:
+      {"type": "text", "content": str}
+    """
+    line = cmd_line.strip()
+    if not line:
+        return None
+    parts = line.split()
+    cmd = parts[0].lower()
+    args = parts[1:]
+
+    if cmd in ("help", "h", "?"):
+        write(HELP_TEXT)
+        return {"type": "text", "content": HELP_TEXT}
+    if cmd in ("exit", "quit", "q"):
+        write("Bye.")
+        return {"type": "text", "content": "Bye."}
+    if cmd == "echo":
+        text = " ".join(args) if args else ""
+        write(text)
+        return {"type": "text", "content": text}
+    if cmd == "anjzy":
+        write("You found the secret command! -- ashgk")
+        return {"type": "text", "content": "You found the secret command! -- ashgk"}
+    if cmd == "axhxt":
+        write("You found the top secret command! -- amhxr")
+        return {"type": "text", "content": "You found the top secret command! -- amhxr"}
+
+    write(f"Unknown command: {line}. Type 'help' for available commands.")
+    return {"type": "text", "content": f"Unknown command: {line}"}
+
 
 def interactive_loop() -> int:
     """Simple REPL that responds to exact commands like 'help' and 'exit'."""
@@ -40,70 +63,17 @@ def interactive_loop() -> int:
         if not cmd_line:
             continue
 
-        parts = cmd_line.split()
-        cmd = parts[0].lower()
-        args = parts[1:]
-
-        # strict/exact matching on the command token
-        if cmd in ("help", "h", "?"):
-            logger.info("User requested help")
-            print_help()
-            continue
-
-        if cmd in ("exit", "quit", "q"):
-            logger.info("User requested exit")
-            print("Bye.")
+        # Delegate to single-command executor
+        res = execute_command(cmd_line, write=lambda s: print(s))
+        if res and res.get("content") == "Bye.":
             return 0
-        
-        if cmd in ("backtest", "bt"):
-            from src.backtest.engine import run_task
-            if not args:
-                print("Usage: backtest TASK_NAME (without .json, from tasks folder)")
-                continue
-            task_name = args[0]
-            try:
-                curve = run_task(task_name)
-                final = curve.iloc[-1]
-                print(f"Backtest done.")
-                print(f"  Final equity: {final['equity']:.2f}")
-                print(f"  Cash: {final['cash']:.2f}")
-                print(f"  Position value: {final['position_value']:.2f}")
-                print(f"  Stock return (pct change of position value): {final['stock_return_pct']*100:.2f}%")
-            except Exception as e:
-                logger.exception("Backtest failed: %s", e)
-                print(f"Backtest failed: {e}")
-            continue
-
-        if cmd in ("config", "cfg"):
-            logger.info("User requested config command (not implemented)")
-            print("Config command is not implemented yet.")
-            continue
-
-        if cmd in ("plot", "pt"):
-            from src.ploter.ploter import run_plot_command
-            run_plot_command(args)
-            continue
-
-        if cmd == "anjzy":
-            logger.info("User entered secret command 'anjzy'")
-            print("You found the secret command! -- ashgk")
-            continue
-        
-        if cmd == "axhxt":
-            logger.info("User entered secret command 'axhxt'")
-            print("You found the top secret command! -- amhxr")
-            continue
-
-        print(f"Unknown command: {cmd_line}. Type 'help' for available commands.")
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the interactive CLI."""
     try:
         # Ensure required directories before starting CLI loop
-        ensure_workspace_dirs()
         return interactive_loop()
     except Exception as e:
-        logger.exception("CLI failed: %s", e)
         return 2
 
 if __name__ == "__main__":
