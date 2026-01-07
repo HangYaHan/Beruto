@@ -1,0 +1,10 @@
+pyproject.toml
+setup.py
+Beruto_core.egg-info/PKG-INFO
+Beruto_core.egg-info/SOURCES.txt
+Beruto_core.egg-info/dependency_links.txt
+Beruto_core.egg-info/not-zip-safe
+Beruto_core.egg-info/top_level.txt
+D:/Code/Beruto/src/engine/src/bindings.cpp
+D:/Code/Beruto/src/engine/src/engine.cpp
+wrapper/__init__.py

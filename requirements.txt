@@ -8,3 +8,4 @@ akshare
 seaborn
 PyQt6
 pyqtgraph
+pybind11

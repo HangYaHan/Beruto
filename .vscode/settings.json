@@ -1,3 +1,8 @@
 {
-    "cmake.sourceDirectory": "D:/Code/FeedbackTrader/quant_trading_system"
+    "cmake.sourceDirectory": "D:/Code/FeedbackTrader/quant_trading_system",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/src/engine/src",
+        "D:/Code/Beruto/.venv/Lib/site-packages/pybind11/include",
+        "${default}" // keep toolchain defaults
+    ]
 }
