@@ -6,3 +6,6 @@ logs/
 /result
 *.pyc
 /plan
+*.pyd
+/src/backtest/engine/build
+/src/backtest/engine/Beruto_core.egg-info
