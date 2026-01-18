@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Any
 from datetime import datetime
 
 import akshare as ak
@@ -31,6 +31,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.input: QtWidgets.QLineEdit | None = None
         self.kline_cache_dir = Path(__file__).resolve().parents[3] / "data" / "kline"
         self.kline_cache_dir.mkdir(parents=True, exist_ok=True)
+        self.symbol_cache_path = Path(__file__).resolve().parents[3] / "data" / "symbols_a.csv"
+        self.last_refresh_path = Path(__file__).resolve().parents[3] / "data" / "last_refresh.txt"
         self.symbol_store_path = Path(__file__).resolve().parents[3] / "data" / "saved_symbols.txt"
         self.symbol_store_path.parent.mkdir(parents=True, exist_ok=True)
         self.saved_symbol_codes: set[str] = self._load_saved_symbol_codes()
@@ -39,6 +41,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.symbol_map: Dict[str, str] = self._load_symbol_cache()
         self.name_to_code: Dict[str, str] = {name: code for code, name in self.symbol_map.items()}
         self.suggestion_list = [f"{code} {name}" for code, name in self.symbol_map.items()]
+        self.last_refresh_date = self._load_last_refresh_date()
+        self.current_plan: Dict[str, Any] | None = None
+        self.current_plan_path: Path | None = None
         self._build_menu()
         self._build_layout()
         self._populate_saved_symbols()
@@ -145,8 +150,10 @@ class MainWindow(QtWidgets.QMainWindow):
             suggestion_list=self.suggestion_list,
             on_symbol_added=self._handle_symbol_added,
             on_symbols_deleted=self._handle_symbols_deleted,
+            on_refresh_requested=self._refresh_all_symbol_data,
             on_symbol_view=self._view_kline_for_code,
             register_tooltip=self._register_tooltip_target,
+            last_refresh_date=self.last_refresh_date,
             parent=self,
         )
         return self.symbols_panel
@@ -174,6 +181,14 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox = QtWidgets.QVBoxLayout(widget)
         vbox.setContentsMargins(8, 8, 8, 8)
         vbox.setSpacing(8)
+
+        # Summary group (updates when a plan is opened/closed)
+        self.plan_summary_group = QtWidgets.QGroupBox("Plan Summary")
+        sg_layout = QtWidgets.QVBoxLayout(self.plan_summary_group)
+        self.plan_summary_label = QtWidgets.QLabel("No plan opened.")
+        self.plan_summary_label.setWordWrap(True)
+        sg_layout.addWidget(self.plan_summary_label)
+        vbox.addWidget(self.plan_summary_group)
 
         vbox.addWidget(make_card("Plan", "Plan name, universe, benchmark (placeholder)"))
         vbox.addWidget(make_card("Arbiter", "Weights, thresholds, debounce parameters (placeholder)"))
@@ -280,21 +295,86 @@ class MainWindow(QtWidgets.QMainWindow):
     # --- Plan menu handlers ---
     def _new_strategy(self) -> None:
         dlg = PlanWizardDialog(self)
-        dlg.exec()
+        result = dlg.exec()
+        # After creating a new plan, auto-open it once if saved
+        try:
+            created_path = getattr(dlg, "created_plan_path", None)
+        except Exception:
+            created_path = None
+        if result == QtWidgets.QDialog.DialogCode.Accepted and created_path:
+            self._load_plan_from_path(Path(created_path))
 
     def _open_strategy(self) -> None:
-        QtWidgets.QMessageBox.information(self, "Open Plan", "TODO: open an existing strategy plan.")
+        path_str, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open Plan JSON",
+            str(Path(__file__).resolve().parents[3] / "plan"),
+            "JSON Files (*.json)"
+        )
+        if not path_str:
+            return
+        self._load_plan_from_path(Path(path_str))
 
     def _save_strategy(self) -> None:
         QtWidgets.QMessageBox.information(self, "Save Plan", "TODO: save the current strategy plan.")
 
     def _close_strategy(self) -> None:
-        QtWidgets.QMessageBox.information(self, "Close Plan", "TODO: close the current strategy plan.")
+        # Clear current plan and update UI summary
+        self.current_plan = None
+        self.current_plan_path = None
+        self._update_plan_summary(None)
+        QtWidgets.QMessageBox.information(self, "Close Plan", "Plan closed.")
+
+    def _load_plan_from_path(self, path: Path) -> None:
+        try:
+            import json
+            with path.open("r", encoding="utf-8") as f:
+                plan = json.load(f)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Open Failed", f"Failed to open plan: {exc}")
+            return
+        self.current_plan = plan
+        self.current_plan_path = path
+        self._update_plan_summary(plan)
+        self._log(f"Opened plan from {path}")
+
+    def _update_plan_summary(self, plan: Dict[str, Any] | None) -> None:
+        if not hasattr(self, "plan_summary_label") or self.plan_summary_label is None:
+            return
+        if not plan:
+            self.plan_summary_label.setText("No plan opened.")
+            return
+        md = plan.get("Metadata", {})
+        univ = plan.get("Universe", {})
+        arb = plan.get("Arbiter", {})
+        orc = plan.get("Oracles", {})
+        exc = plan.get("Executor", {})
+        name = md.get("name") or md.get("plan_id", "(unnamed)")
+        created = md.get("created_at", "")
+        symbols = univ.get("symbols", [])
+        mode = arb.get("fusion_mode", "")
+        freq = arb.get("scheduling", {}).get("frequency", "")
+        thresh = arb.get("scheduling", {}).get("rebalance_threshold", "")
+        max_pos = arb.get("constraints", {}).get("max_position_per_symbol", "")
+        factors = orc.get("selected_factors", [])
+        cash = exc.get("initial_cash", "")
+
+        summary_lines = [
+            f"Name: {name}",
+            f"Created: {created}",
+            f"Universe: {len(symbols)} symbols ({', '.join(symbols[:6])}{'...' if len(symbols) > 6 else ''})",
+            f"Oracles: {len(factors)} selected",
+            f"Arbiter: mode={mode}, freq={freq}, threshold={thresh}, max_pos={max_pos}",
+            f"Executor: initial_cash={cash}",
+        ]
+        if self.current_plan_path:
+            summary_lines.append(f"Path: {self.current_plan_path}")
+        self.plan_summary_label.setText("\n".join(summary_lines))
 
     # --- Symbol management ---
     def _load_symbol_cache(self) -> Dict[str, str]:
         """Load A-share symbols (plus ETF) from cache; fetch via akshare if missing."""
-        cache_path = Path(__file__).resolve().parents[3] / "data" / "symbols_a.csv"
+        cache_path = self.symbol_cache_path
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         if cache_path.exists():
             try:
@@ -304,6 +384,9 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception:
                 pass  # fallback to fetch
 
+        return self._fetch_and_cache_symbols()
+
+    def _fetch_and_cache_symbols(self) -> Dict[str, str]:
         try:
             QtWidgets.QMessageBox.information(
                 self,
@@ -315,7 +398,8 @@ class MainWindow(QtWidgets.QMainWindow):
             df = pd.concat([a_df, etf_df], ignore_index=True)
             df = df.drop_duplicates(subset=["代码"]).rename(columns={"代码": "code", "名称": "name"})
             df = df.sort_values("code")
-            df.to_csv(cache_path, index=False, encoding="utf-8")
+            df.to_csv(self.symbol_cache_path, index=False, encoding="utf-8")
+            self._set_last_refresh_date(datetime.now().strftime("%Y-%m-%d"))
             return dict(zip(df["code"], df["name"]))
         except Exception:
             QtWidgets.QMessageBox.warning(
@@ -324,6 +408,26 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Failed to load symbols from akshare. Please check network and retry.",
             )
             return {}
+
+    def _load_last_refresh_date(self) -> str:
+        try:
+            return self.last_refresh_path.read_text(encoding="utf-8").strip()
+        except Exception:
+            if self.symbol_cache_path.exists():
+                try:
+                    return datetime.fromtimestamp(self.symbol_cache_path.stat().st_mtime).strftime("%Y-%m-%d")
+                except Exception:
+                    return ""
+            return ""
+
+    def _set_last_refresh_date(self, date_str: str) -> None:
+        try:
+            self.last_refresh_path.write_text(date_str, encoding="utf-8")
+            self.last_refresh_date = date_str
+            if hasattr(self, "symbols_panel"):
+                self.symbols_panel.set_last_refresh_date(date_str)
+        except Exception:
+            pass
 
     def _load_saved_symbol_codes(self) -> set[str]:
         try:
@@ -375,6 +479,28 @@ class MainWindow(QtWidgets.QMainWindow):
                     self._log(f"Failed to delete {cache_path}: {exc}")
         if changed:
             self._persist_saved_symbols()
+
+    def _refresh_all_symbol_data(self) -> None:
+        if not self.saved_symbol_codes:
+            QtWidgets.QMessageBox.information(self, "Refresh", "No saved symbols to refresh.")
+            return
+        codes = sorted(self.saved_symbol_codes)
+        for code in codes:
+            cache_path = self.kline_cache_dir / f"{code}.csv"
+            self._download_kline_with_progress(code, cache_path)
+        today = datetime.now().strftime("%Y-%m-%d")
+        self._set_last_refresh_date(today)
+
+    def _refresh_symbol_universe(self) -> None:
+        new_map = self._fetch_and_cache_symbols()
+        if not new_map:
+            return
+        self.symbol_map = new_map
+        self.name_to_code = {name: code for code, name in self.symbol_map.items()}
+        self.suggestion_list = [f"{code} {name}" for code, name in self.symbol_map.items()]
+        if hasattr(self, "symbols_panel"):
+            self.symbols_panel.update_symbol_sources(self.symbol_map, self.name_to_code, self.suggestion_list)
+        self._set_last_refresh_date(datetime.now().strftime("%Y-%m-%d"))
     def _handle_symbol_added(self, code: str) -> None:
         self._add_symbol_to_saved(code)
         self._download_kline_if_missing(code)

@@ -18,6 +18,11 @@ class PlanWizardDialog(QtWidgets.QDialog):
         self._defaults = self._load_defaults()
         self._factor_library = self._load_factor_library()
         self._selected_factors: List[Dict[str, Any]] = []
+        # Symbol cache for validation and search
+        self.symbol_map: Dict[str, str] = self._load_symbol_cache()
+        self.name_to_code: Dict[str, str] = {name: code for code, name in self.symbol_map.items()}
+        self.suggestion_list: List[str] = [f"{code} {name}" for code, name in self.symbol_map.items()]
+        self.created_plan_path: str | None = None
         self._build_ui()
 
     def _load_defaults(self) -> Dict:
@@ -81,6 +86,21 @@ class PlanWizardDialog(QtWidgets.QDialog):
                     pass
 
         return list(by_name.values())
+
+    def _load_symbol_cache(self) -> Dict[str, str]:
+        """Load symbol code->name map from cache; avoid network when possible."""
+        base = Path(__file__).resolve().parents[3] / "data"
+        cache_path = base / "symbols_a.csv"
+        try:
+            import pandas as pd
+            if cache_path.exists():
+                df = pd.read_csv(cache_path, dtype=str)
+                if {"code", "name"}.issubset(df.columns):
+                    return {row["code"]: row["name"] for _, row in df.iterrows()}
+        except Exception:
+            pass
+        # Fallback: minimal set (no network fetch here to keep wizard snappy)
+        return {}
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
@@ -163,10 +183,15 @@ class PlanWizardDialog(QtWidgets.QDialog):
         # Symbols list with add/remove
         self.u_symbols_list = QtWidgets.QListWidget()
         self.u_symbol_input = QtWidgets.QLineEdit()
-        self.u_symbol_input.setPlaceholderText("Add symbol code, e.g., 600519")
+        self.u_symbol_input.setPlaceholderText("Search by code or name…")
+        # Autocomplete using local symbol suggestions (code + name)
+        completer = QtWidgets.QCompleter(self.suggestion_list, self)
+        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
+        self.u_symbol_input.setCompleter(completer)
         add_btn = QtWidgets.QPushButton("Add")
         del_btn = QtWidgets.QPushButton("Delete Selected")
-        add_btn.clicked.connect(self._universe_add_symbol)
+        add_btn.clicked.connect(self._universe_add_symbol_resolved)
         del_btn.clicked.connect(self._universe_delete_symbols)
         controls = QtWidgets.QHBoxLayout()
         controls.setContentsMargins(0, 0, 0, 0)
@@ -435,8 +460,12 @@ class PlanWizardDialog(QtWidgets.QDialog):
                 return
         self.u_symbols_list.addItem(code_clean)
 
-    def _universe_add_symbol(self) -> None:
-        code = self.u_symbol_input.text()
+    def _universe_add_symbol_resolved(self) -> None:
+        text = self.u_symbol_input.text()
+        code = self._resolve_input_to_code(text)
+        if not code or code not in self.symbol_map:
+            QtWidgets.QMessageBox.warning(self, "Invalid", "请输入有效的标的（代码或名称），仅允许数据库中的股票代码。")
+            return
         self._universe_add_symbol_to_list(code)
         self.u_symbol_input.clear()
 
@@ -444,6 +473,21 @@ class PlanWizardDialog(QtWidgets.QDialog):
         for item in self.u_symbols_list.selectedItems():
             row = self.u_symbols_list.row(item)
             self.u_symbols_list.takeItem(row)
+
+    def _resolve_input_to_code(self, text: str) -> str | None:
+        t = text.strip()
+        if not t:
+            return None
+        token = t.split()[0].strip().upper()
+        if token in self.symbol_map:
+            return token
+        if t in self.name_to_code:
+            return self.name_to_code[t]
+        # Try partial matches
+        matches = [c for c, n in self.symbol_map.items() if c.startswith(token) or n.startswith(t)]
+        if len(matches) == 1:
+            return matches[0]
+        return None
 
     def _refresh_factor_library(self) -> None:
         self.factor_available.clear()
@@ -538,6 +582,7 @@ class PlanWizardDialog(QtWidgets.QDialog):
             with open(save_path, "w", encoding="utf-8") as f:
                 json.dump(plan, f, ensure_ascii=False, indent=2)
             QtWidgets.QMessageBox.information(self, "Saved", f"Plan saved to:\n{save_path}")
+            self.created_plan_path = save_path
             self.accept()
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Save Failed", str(exc))

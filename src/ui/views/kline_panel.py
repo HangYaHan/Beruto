@@ -24,7 +24,7 @@ class KlineDownloadWorker(QtCore.QObject):
 
     def run(self) -> None:
         try:
-            self.message.emit(f"正在下载 {self.code} K线数据...")
+            self.message.emit(f"Downloading {self.code} K-line data...")
             self.progress.emit(10)
             df = self._fetch_kline()
             self.progress.emit(80)
@@ -138,8 +138,9 @@ class KLineChartPanel(QtWidgets.QFrame):
         palette = self.palette()
         self._bg_color = palette.window().color().name()
         self._text_color = palette.text().color().name()
-        self._up_color = "#d9534f"  # A-share: red for up
-        self._down_color = "#1faf5d"  # A-share: green for down
+        # Use A-share convention: red for up, green for down
+        self._up_color = "#ff4d4f"
+        self._down_color = "#2ecc71"
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)

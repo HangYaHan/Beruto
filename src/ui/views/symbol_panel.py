@@ -30,8 +30,10 @@ class SymbolsPanel(QtWidgets.QWidget):
         suggestion_list: List[str],
         on_symbol_added: Callable[[str], None],
         on_symbols_deleted: Callable[[list[str]], None],
+        on_refresh_requested: Callable[[], None],
         on_symbol_view: Callable[[str], None],
         register_tooltip: Callable[[QtWidgets.QWidget, str], None],
+        last_refresh_date: str = "",
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -40,8 +42,10 @@ class SymbolsPanel(QtWidgets.QWidget):
         self.suggestion_list = suggestion_list
         self.on_symbol_added = on_symbol_added
         self.on_symbols_deleted = on_symbols_deleted
+        self.on_refresh_requested = on_refresh_requested
         self.on_symbol_view = on_symbol_view
         self.register_tooltip = register_tooltip
+        self._last_refresh_date = last_refresh_date
 
         self.symbol_list_widget = SymbolListWidget()
         self.symbol_list_widget.setSelectionMode(
@@ -68,6 +72,22 @@ class SymbolsPanel(QtWidgets.QWidget):
         label.setStyleSheet("font-weight: bold; font-size: 14px;")
         vbox.addWidget(label)
 
+        # Last refresh info
+        info_row = QtWidgets.QHBoxLayout()
+        info_row.setContentsMargins(0, 0, 0, 0)
+        info_row.setSpacing(6)
+        last_label = QtWidgets.QLabel("Last Refresh:")
+        last_label.setStyleSheet("color: #999; font-size: 11px;")
+        info_row.addWidget(last_label)
+        self.last_refresh_field = QtWidgets.QLineEdit()
+        self.last_refresh_field.setReadOnly(True)
+        self.last_refresh_field.setFrame(False)
+        self.last_refresh_field.setStyleSheet("background: transparent; color: #999; font-size: 11px;")
+        self.last_refresh_field.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self.last_refresh_field.setText(self._last_refresh_date)
+        info_row.addWidget(self.last_refresh_field)
+        vbox.addLayout(info_row)
+
         vbox.addWidget(self.symbol_list_widget)
         vbox.addWidget(self._build_action_buttons())
 
@@ -81,6 +101,7 @@ class SymbolsPanel(QtWidgets.QWidget):
         buttons = [
             ("Add Symbol", "Add symbol to list", make_colored_icon("add", "#2ecc71")),
             ("Delete Symbol", "Delete selected symbols", make_colored_icon("remove", "#e74c3c")),
+            ("Refresh", "Refresh saved symbols data", make_colored_icon("refresh", "#3498db")),
         ]
         hbox.addStretch(1)
         for text, tooltip, icon in buttons:
@@ -94,6 +115,8 @@ class SymbolsPanel(QtWidgets.QWidget):
                 btn.clicked.connect(self._on_add_symbol)
             elif text == "Delete Symbol":
                 btn.clicked.connect(self._on_delete_symbol)
+            elif text == "Refresh":
+                btn.clicked.connect(self._on_refresh_symbol_data)
             hbox.addWidget(btn)
 
         hbox.addStretch(1)
@@ -164,6 +187,10 @@ class SymbolsPanel(QtWidgets.QWidget):
 
         dialog.exec()
 
+    def _on_refresh_symbol_data(self) -> None:
+        if self.on_refresh_requested:
+            self.on_refresh_requested()
+
     def _on_delete_symbol(self) -> None:
         items = self.symbol_list_widget.selectedItems()
         if not items:
@@ -206,3 +233,14 @@ class SymbolsPanel(QtWidgets.QWidget):
         if len(matches) == 1:
             return matches[0]
         return None
+
+    def set_last_refresh_date(self, date_str: str) -> None:
+        self._last_refresh_date = date_str
+        if hasattr(self, "last_refresh_field"):
+            self.last_refresh_field.setText(date_str)
+
+    def update_symbol_sources(self, symbol_map: Dict[str, str], name_to_code: Dict[str, str], suggestion_list: List[str]) -> None:
+        """Update caches and completer after a refresh."""
+        self.symbol_map = symbol_map
+        self.name_to_code = name_to_code
+        self.suggestion_list = suggestion_list

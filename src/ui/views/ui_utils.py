@@ -4,7 +4,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 
 def make_colored_icon(kind: str, color: str) -> QtGui.QIcon:
-    """Create a simple colored icon for add/remove/run without external assets."""
+    """Create a simple colored icon for add/remove/run/refresh without external assets."""
     size = 30
     pixmap = QtGui.QPixmap(size, size)
     pixmap.fill(QtCore.Qt.GlobalColor.transparent)
@@ -23,13 +23,21 @@ def make_colored_icon(kind: str, color: str) -> QtGui.QIcon:
         painter.drawLine(offset, center, size - offset, center)
     elif kind == "remove":
         painter.drawLine(offset, center, size - offset, center)
-    elif kind == "run":
-        points = [
-            QtCore.QPoint(offset, offset),
-            QtCore.QPoint(size - offset, center),
-            QtCore.QPoint(offset, size - offset),
-        ]
-        painter.drawPolygon(QtGui.QPolygon(points))
+    elif kind == "refresh":
+        # Draw a simple downward arrow (stroke-only). Color is controlled by pen.
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        x = center
+        top_y = offset
+        bottom_y = size - offset
+        # Shaft
+        painter.drawLine(x, top_y, x, bottom_y)
+        # Arrow head (V shape)
+        head = 6
+        tip = QtCore.QPoint(x, bottom_y + 2)
+        left = QtCore.QPoint(x - head, bottom_y - head + 2)
+        right = QtCore.QPoint(x + head, bottom_y - head + 2)
+        painter.drawLine(tip, left)
+        painter.drawLine(tip, right)
     painter.end()
 
     return QtGui.QIcon(pixmap)
