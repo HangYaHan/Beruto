@@ -28,7 +28,7 @@ def main(args: Any = None) -> int:
     if parsed.cli:
         from src.system.CLI import main as cli_main
         return cli_main([])
-
+ 
     try:
         from src.ui.app import run_ui
         return run_ui(default_task=parsed.task)

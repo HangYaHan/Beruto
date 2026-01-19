@@ -1,25 +1,30 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import Optional, Dict
+
+
 class Factor(ABC):
     """
-    所有因子的基类。
+    Base class for all factors.
     """
-    
-    def __init__(self, params: Dict):
+
+    def __init__(self, params: Dict) -> None:
         """
-        初始化因子参数 (如 BuyHold 的 ratio)。
+        Initialize factor parameters.
         """
-        pass
+        self.params = params or {}
 
     @abstractmethod
-    def calculate(self, context: Context, symbol: str) -> Optional[float]:
+    def calculate(self, context: "Context", symbol: str) -> Optional[float]:
         """
-        核心计算逻辑。
-        
+        Core calculation logic.
+
         Args:
-            context: 包含账户、历史行情、新闻等的全量上下文。
-            symbol: 当前正在计算的标的。
-            
+            context: Full runtime context including account and market data.
+            symbol: The symbol being evaluated.
+
         Returns:
-            Target Weight (float): 目标仓位权重 (0.0 ~ 1.0)。
-            None: 表示该因子对该标的没有意见 (Do Nothing)。
+            Target weight (0.0 ~ 1.0). None means no opinion.
         """
-        pass
+        raise NotImplementedError

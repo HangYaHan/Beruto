@@ -1,17 +1,44 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+import pandas as pd
+
+from src.backtest.datatype import AccountState
+
+
 class Context:
     """
-    上帝对象 (God Object)，包含因子决策所需的一切信息。
-    它的生命周期贯穿整个回测过程，但在每个 step 会被更新。
+    Runtime context containing the current date, account state,
+    and a data proxy to fetch market data for factors and engine.
     """
-    
-    # --- 属性声明 ---
-    current_date: datetime
-    account: AccountState        # 当前的账户状态
-    data_proxy: 'DataProxy'      # 数据访问代理 (见下文)
-    
-    # --- 伪代码功能描述 ---
-    # def history(self, symbol, count) -> DataFrame:
-    #     便捷方法，通过 data_proxy 获取过去 N 天的历史数据
-    
-    # def snapshot(self) -> AccountState:
-    #     返回当前账户状态的深拷贝 (用于存档)
+
+    def __init__(self, current_date: datetime, account: AccountState, data_proxy: "DataProxy") -> None:
+        self.current_date = current_date
+        self.account = account
+        self.data_proxy = data_proxy
+
+    def history(self, symbol: str, count: int) -> pd.DataFrame:
+        """
+        Convenience wrapper to get the last N bars up to current date as a DataFrame.
+        """
+        bars = self.data_proxy.get_history(symbol, count)
+        if not bars:
+            return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])  # empty
+        return pd.DataFrame(
+            [{
+                "date": b.date,
+                "open": b.open,
+                "high": b.high,
+                "low": b.low,
+                "close": b.close,
+                "volume": b.volume,
+            } for b in bars]
+        )
+
+    def snapshot(self) -> AccountState:
+        """
+        Return a deep copy of the current account state (for history persistence).
+        """
+        return self.account.clone()

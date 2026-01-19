@@ -11,9 +11,10 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from src.system.CLI import execute_command
 from src.ui.views.console_panel import ConsolePanel
 from src.ui.views.kline_panel import KLineChartPanel, KlineDownloadWorker
-from src.ui.views.plan_wizard import PlanWizardDialog
+from src.ui.views.plan_wizard import PlanWizardDialog, PLAN_SIGNATURE
 from src.ui.views.symbol_panel import SymbolsPanel
 from src.ui.views.ui_utils import make_card
+from src.system.settings import SettingsManager
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, default_task: str | None = None, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -32,22 +33,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.kline_cache_dir = Path(__file__).resolve().parents[3] / "data" / "kline"
         self.kline_cache_dir.mkdir(parents=True, exist_ok=True)
         self.symbol_cache_path = Path(__file__).resolve().parents[3] / "data" / "symbols_a.csv"
-        self.last_refresh_path = Path(__file__).resolve().parents[3] / "data" / "last_refresh.txt"
-        self.symbol_store_path = Path(__file__).resolve().parents[3] / "data" / "saved_symbols.txt"
-        self.symbol_store_path.parent.mkdir(parents=True, exist_ok=True)
-        self.saved_symbol_codes: set[str] = self._load_saved_symbol_codes()
+        # Settings manager (unified JSON under data/settings.json)
+        self.settings = SettingsManager(project_root=Path(__file__).resolve().parents[3])
+        self.saved_symbol_codes: set[str] = set(self.settings.get_saved_symbols())
         self._download_threads: list[QtCore.QThread] = []
         self._download_workers: list[QtCore.QObject] = []
         self.symbol_map: Dict[str, str] = self._load_symbol_cache()
         self.name_to_code: Dict[str, str] = {name: code for code, name in self.symbol_map.items()}
         self.suggestion_list = [f"{code} {name}" for code, name in self.symbol_map.items()]
-        self.last_refresh_date = self._load_last_refresh_date()
+        self.last_refresh_date = self.settings.get_last_refresh_date()
         self.current_plan: Dict[str, Any] | None = None
         self.current_plan_path: Path | None = None
         self._build_menu()
         self._build_layout()
         self._populate_saved_symbols()
         self._sync_console_action_label(False)
+        self._sync_plan_actions()
 
     def _build_layout(self) -> None:
         central = QtWidgets.QWidget()
@@ -84,24 +85,31 @@ class MainWindow(QtWidgets.QMainWindow):
             "QMenu::item:selected { background: palette(Highlight); color: palette(HighlightedText); }"
         )
 
+        # File menu: only Exit
         file_menu = bar.addMenu("File")
-        new_action = QtGui.QAction("New Plan", self)
-        new_action.triggered.connect(self._new_strategy)
-        open_action = QtGui.QAction("Open Plan", self)
-        open_action.triggered.connect(self._open_strategy)
-        save_action = QtGui.QAction("Save Plan", self)
-        save_action.triggered.connect(self._save_strategy)
-        close_action = QtGui.QAction("Close Plan", self)
-        close_action.triggered.connect(self._close_strategy)
         exit_action = QtGui.QAction("Exit", self)
         exit_action.triggered.connect(self.close)
-
-        file_menu.addAction(new_action)
-        file_menu.addAction(open_action)
-        file_menu.addAction(save_action)
-        file_menu.addAction(close_action)
-        file_menu.addSeparator()
         file_menu.addAction(exit_action)
+
+        # Plan menu
+        plan_menu = bar.addMenu("Plan")
+        self.action_new_plan = QtGui.QAction("New Plan", self)
+        self.action_new_plan.triggered.connect(self._new_strategy)
+        self.action_open_plan = QtGui.QAction("Open Plan", self)
+        self.action_open_plan.triggered.connect(self._open_strategy)
+        self.action_edit_plan = QtGui.QAction("Edit Plan", self)
+        self.action_edit_plan.triggered.connect(self._edit_strategy)
+        self.action_save_plan = QtGui.QAction("Save Plan", self)
+        self.action_save_plan.triggered.connect(self._save_strategy)
+        self.action_close_plan = QtGui.QAction("Close Plan", self)
+        self.action_close_plan.triggered.connect(self._close_strategy)
+
+        plan_menu.addAction(self.action_new_plan)
+        plan_menu.addAction(self.action_open_plan)
+        plan_menu.addSeparator()
+        plan_menu.addAction(self.action_edit_plan)
+        plan_menu.addAction(self.action_save_plan)
+        plan_menu.addAction(self.action_close_plan)
 
         help_menu = bar.addMenu("Help")
         self.console_toggle_action = QtGui.QAction("Hide Console", self)
@@ -316,7 +324,29 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_plan_from_path(Path(path_str))
 
     def _save_strategy(self) -> None:
-        QtWidgets.QMessageBox.information(self, "Save Plan", "TODO: save the current strategy plan.")
+        import json
+        if not self.current_plan:
+            QtWidgets.QMessageBox.information(self, "Save Plan", "No plan to save.")
+            return
+        if not self.current_plan_path:
+            path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                "Save Plan JSON",
+                str(Path(__file__).resolve().parents[3] / "plan" / "plan.json"),
+                "JSON Files (*.json)"
+            )
+            if not path_str:
+                return
+            self.current_plan_path = Path(path_str)
+        # Ensure signature exists
+        self.current_plan.setdefault("signature", PLAN_SIGNATURE)
+        try:
+            self.current_plan_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.current_plan_path.open("w", encoding="utf-8") as f:
+                json.dump(self.current_plan, f, ensure_ascii=False, indent=2)
+            QtWidgets.QMessageBox.information(self, "Saved", f"Plan saved to: {self.current_plan_path}")
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Save Failed", str(exc))
 
     def _close_strategy(self) -> None:
         # Clear current plan and update UI summary
@@ -324,12 +354,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_plan_path = None
         self._update_plan_summary(None)
         QtWidgets.QMessageBox.information(self, "Close Plan", "Plan closed.")
+        self._sync_plan_actions()
+
+    def _edit_strategy(self) -> None:
+        # Open the current plan file in the default editor for quick edits
+        if not self.current_plan_path:
+            QtWidgets.QMessageBox.information(self, "Edit Plan", "No plan opened. Open or create a plan first.")
+            return
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(self.current_plan_path)))
 
     def _load_plan_from_path(self, path: Path) -> None:
         try:
             import json
             with path.open("r", encoding="utf-8") as f:
                 plan = json.load(f)
+            if plan.get("signature") != PLAN_SIGNATURE:
+                raise ValueError("Invalid plan signature")
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Open Failed", f"Failed to open plan: {exc}")
             return
@@ -337,6 +377,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_plan_path = path
         self._update_plan_summary(plan)
         self._log(f"Opened plan from {path}")
+        self._sync_plan_actions()
 
     def _update_plan_summary(self, plan: Dict[str, Any] | None) -> None:
         if not hasattr(self, "plan_summary_label") or self.plan_summary_label is None:
@@ -370,6 +411,20 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.current_plan_path:
             summary_lines.append(f"Path: {self.current_plan_path}")
         self.plan_summary_label.setText("\n".join(summary_lines))
+
+    def _sync_plan_actions(self) -> None:
+        has_plan = self.current_plan is not None
+        # When no plan is open: enable New/Open; disable Edit/Save/Close
+        # When a plan is open: disable New/Open; enable Edit/Save/Close
+        for action, enabled in (
+            (getattr(self, "action_new_plan", None), not has_plan),
+            (getattr(self, "action_open_plan", None), not has_plan),
+            (getattr(self, "action_edit_plan", None), has_plan),
+            (getattr(self, "action_save_plan", None), has_plan),
+            (getattr(self, "action_close_plan", None), has_plan),
+        ):
+            if action is not None:
+                action.setEnabled(enabled)
 
     # --- Symbol management ---
     def _load_symbol_cache(self) -> Dict[str, str]:
@@ -409,46 +464,24 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             return {}
 
-    def _load_last_refresh_date(self) -> str:
-        try:
-            return self.last_refresh_path.read_text(encoding="utf-8").strip()
-        except Exception:
-            if self.symbol_cache_path.exists():
-                try:
-                    return datetime.fromtimestamp(self.symbol_cache_path.stat().st_mtime).strftime("%Y-%m-%d")
-                except Exception:
-                    return ""
-            return ""
-
     def _set_last_refresh_date(self, date_str: str) -> None:
         try:
-            self.last_refresh_path.write_text(date_str, encoding="utf-8")
+            self.settings.set_last_refresh_date(date_str)
             self.last_refresh_date = date_str
             if hasattr(self, "symbols_panel"):
                 self.symbols_panel.set_last_refresh_date(date_str)
         except Exception:
             pass
 
-    def _load_saved_symbol_codes(self) -> set[str]:
-        try:
-            return {
-                line.strip().upper()
-                for line in self.symbol_store_path.read_text(encoding="utf-8").splitlines()
-                if line.strip()
-            }
-        except FileNotFoundError:
-            return set()
-        except Exception:
-            return set()
-
     def _persist_saved_symbols(self) -> None:
         try:
-            self.symbol_store_path.write_text(
-                "\n".join(sorted(self.saved_symbol_codes)),
-                encoding="utf-8",
-            )
+            # Sync with settings manager
+            current = sorted(set(self.saved_symbol_codes))
+            # Replace settings list with current
+            self.settings._settings.savedSymbols = current
+            self.settings.save()
         except Exception as exc:
-            self._log(f"Failed to persist symbols to {self.symbol_store_path}: {exc}")
+            self._log(f"Failed to persist symbols: {exc}")
 
     def _populate_saved_symbols(self) -> None:
         if not self.saved_symbol_codes or not hasattr(self, "symbols_panel"):

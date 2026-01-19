@@ -1,11 +1,16 @@
-# Python dependencies
-pandas
-yfinance
-matplotlib
-numpy
-pytest
-akshare
-seaborn
-PyQt6
-pyqtgraph
-pybind11
+# Core UI
+PyQt6~=6.6
+pyqtgraph~=0.13.4
+
+# Data processing
+pandas~=2.2
+numpy~=1.26
+
+# Data source
+akshare~=1.11
+
+# Build C++ extension (pybind11)
+pybind11~=2.11
+
+# Testing
+pytest~=7.4

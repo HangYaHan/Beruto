@@ -10,6 +10,9 @@ from datetime import datetime
 import csv
 
 
+PLAN_SIGNATURE = "BERUTO_PLAN_V1"
+
+
 class PlanWizardDialog(QtWidgets.QDialog):
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -644,6 +647,7 @@ class PlanWizardDialog(QtWidgets.QDialog):
         }
 
         return {
+            "signature": PLAN_SIGNATURE,
             "version": int(self._defaults.get("version", 1)),
             "Universe": universe,
             "Oracles": oracles,
@@ -653,4 +657,4 @@ class PlanWizardDialog(QtWidgets.QDialog):
         }
 
 
-__all__ = ["PlanWizardDialog"]
+__all__ = ["PlanWizardDialog", "PLAN_SIGNATURE"]
