@@ -1,0 +1,50 @@
+{
+  "signature": "BERUTO_PLAN_V1",
+  "version": 1,
+  "Universe": {
+    "start_date": "2025-01-21",
+    "end_date": "2026-01-21",
+    "data_frequency": "1d",
+    "type": "static",
+    "symbols": []
+  },
+  "Oracles": {
+    "selected_factors": [],
+    "preprocess": {
+      "zscore": false,
+      "missing_fill": "none"
+    }
+  },
+  "Arbiter": {
+    "fusion_mode": "linear",
+    "linear": {
+      "weights": {}
+    },
+    "conditional": {
+      "rule": ""
+    },
+    "ai": {
+      "model_path": ""
+    },
+    "scheduling": {
+      "frequency": "daily",
+      "rebalance_threshold": 0.05
+    },
+    "constraints": {
+      "max_position_per_symbol": 0.2
+    }
+  },
+  "Executor": {
+    "initial_cash": 1000000.0,
+    "commission_rate": 0.0003,
+    "tax_rate": 0.001,
+    "slippage_model": "Fixed 0.01%"
+  },
+  "Metadata": {
+    "plan_id": "fd231cdf-aad8-41a8-bdcd-208a49fd69d1",
+    "name": "",
+    "created_at": "2026-01-21 17:19:02",
+    "description": "",
+    "save_path": "D:/Code/Beruto/plan.json"
+  }
+}

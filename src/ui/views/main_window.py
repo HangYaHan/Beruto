@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
+import json
 from datetime import datetime
 
-import akshare as ak
 import pandas as pd
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from src.system.CLI import execute_command
+from src.ui.controllers.main_controller import MainController
+from src.ui.services.plan_storage import PlanStorage
+from src.ui.services.symbol_service import SymbolDataService
+from src.ui.views.calendar_view import FinancialCalendarWidget
 from src.ui.views.console_panel import ConsolePanel
 from src.ui.views.kline_panel import KLineChartPanel, KlineDownloadWorker
-from src.ui.views.plan_wizard import PlanWizardDialog, PLAN_SIGNATURE
+from src.ui.views.plan_wizard import PlanWizardDialog
 from src.ui.views.symbol_panel import SymbolsPanel
+from src.ui.views.visualizers import LiveStatus, OrderPanel
 from src.ui.views.ui_utils import make_card
 from src.system.settings import SettingsManager
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, default_task: str | None = None, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -30,18 +36,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.console_toggle_action: QtGui.QAction | None = None
         # Set early to avoid AttributeError when eventFilter is triggered before console creation.
         self.input: QtWidgets.QLineEdit | None = None
-        self.kline_cache_dir = Path(__file__).resolve().parents[3] / "data" / "kline"
+        self.project_root = Path(__file__).resolve().parents[3]
+        self.kline_cache_dir = self.project_root / "data" / "kline"
         self.kline_cache_dir.mkdir(parents=True, exist_ok=True)
-        self.symbol_cache_path = Path(__file__).resolve().parents[3] / "data" / "symbols_a.csv"
-        # Settings manager (unified JSON under data/settings.json)
-        self.settings = SettingsManager(project_root=Path(__file__).resolve().parents[3])
-        self.saved_symbol_codes: set[str] = set(self.settings.get_saved_symbols())
+
+        self.settings = SettingsManager(project_root=self.project_root)
+        self.symbol_service = SymbolDataService(self.project_root, self.settings, logger=self._log)
+        self.plan_storage = PlanStorage()
+        self.controller = MainController(window=self, project_root=self.project_root)
+        self.history: list[Any] = []
+        self.factors_data: Dict[str, Dict[str, Any]] = {}
         self._download_threads: list[QtCore.QThread] = []
         self._download_workers: list[QtCore.QObject] = []
-        self.symbol_map: Dict[str, str] = self._load_symbol_cache()
-        self.name_to_code: Dict[str, str] = {name: code for code, name in self.symbol_map.items()}
-        self.suggestion_list = [f"{code} {name}" for code, name in self.symbol_map.items()]
-        self.last_refresh_date = self.settings.get_last_refresh_date()
+
+        symbol_map = self.symbol_service.load_symbol_map()
+        self._apply_symbol_sources(symbol_map)
+        self.saved_symbol_codes: set[str] = set(self.symbol_service.get_saved_symbols())
+        self.last_refresh_date = self.symbol_service.get_last_refresh_date()
         self.current_plan: Dict[str, Any] | None = None
         self.current_plan_path: Path | None = None
         self._build_menu()
@@ -49,6 +60,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._populate_saved_symbols()
         self._sync_console_action_label(False)
         self._sync_plan_actions()
+        if hasattr(self, "calendar_widget"):
+            self.calendar_widget.date_selected.connect(self.on_replay_step)
+        self._load_factors_from_settings()
 
     def _build_layout(self) -> None:
         central = QtWidgets.QWidget()
@@ -91,6 +105,11 @@ class MainWindow(QtWidgets.QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
+        # Run backtest for the current plan
+        self.action_run_backtest = QtGui.QAction("Run Backtest", self)
+        self.action_run_backtest.triggered.connect(self.controller.on_action_run_backtest_triggered)
+        file_menu.addAction(self.action_run_backtest)
+
         # Plan menu
         plan_menu = bar.addMenu("Plan")
         self.action_new_plan = QtGui.QAction("New Plan", self)
@@ -132,6 +151,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.factor_list_widget.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
+        self.factor_list_widget.itemDoubleClicked.connect(self._handle_factor_double_clicked)
 
         tabs.addTab(self._build_universe_tab(), "Universe")
         tabs.addTab(self._build_symbols_tab(), "Symbols")
@@ -146,9 +166,11 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
-
-        layout.addWidget(make_card("Universe Rules", "Dynamic pool filters: ST/PT, IPO age, suspension, delisting (placeholder)"))
-        layout.addWidget(make_card("Constituents & Calendar", "Index constituents and trading calendar (placeholder)"))
+        rules = make_card("Universe Rules", "Dynamic pool filters: ST/PT, IPO age, suspension, delisting (placeholder)")
+        self.calendar_widget = FinancialCalendarWidget(parent=widget)
+        self.calendar_widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        layout.addWidget(rules, stretch=1)
+        layout.addWidget(self.calendar_widget, stretch=2)
         return widget
 
     def _build_symbols_tab(self) -> QtWidgets.QWidget:
@@ -201,17 +223,35 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(make_card("Plan", "Plan name, universe, benchmark (placeholder)"))
         vbox.addWidget(make_card("Arbiter", "Weights, thresholds, debounce parameters (placeholder)"))
         vbox.addWidget(make_card("Scheduler", "Rebalance frequency and triggers (placeholder)"))
-        vbox.addWidget(make_card("Save / Apply", "Save draft / apply to backtest buttons (placeholder)"))
         return widget
 
     def _build_middle_tabs(self) -> QtWidgets.QWidget:
         tabs = QtWidgets.QTabWidget()
+        self.chart_stack = QtWidgets.QStackedWidget()
         self.kline_panel = KLineChartPanel(on_symbol_requested=self._view_kline_for_code, parent=self)
-        tabs.addTab(self.kline_panel, "Chart")
+        self.chart_stack.addWidget(self.kline_panel)
+        self.factor_help_panel = self._build_factor_help_panel()
+        self.chart_stack.addWidget(self.factor_help_panel)
+        tabs.addTab(self.chart_stack, "Chart")
         tabs.addTab(make_card("Signals", "Oracle signals aligned on timeline (placeholder)"), "Signals")
         tabs.addTab(make_card("Portfolio", "Target vs current holdings, rebalance diff (placeholder)"), "Portfolio")
-        tabs.addTab(make_card("Orders", "Executor order preview and constraint checks (placeholder)"), "Orders")
+        self.order_panel = OrderPanel(parent=self)
+        tabs.addTab(self.order_panel, "Orders")
         return tabs
+
+    def _build_factor_help_panel(self) -> QtWidgets.QWidget:
+        panel = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(panel)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+        self.factor_help_title = QtWidgets.QLabel("Factor Help")
+        self.factor_help_title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.factor_help_body = QtWidgets.QTextEdit()
+        self.factor_help_body.setReadOnly(True)
+        self.factor_help_body.setPlaceholderText("Double-click a factor to view its help text.")
+        layout.addWidget(self.factor_help_title)
+        layout.addWidget(self.factor_help_body)
+        return panel
 
     def _build_info_wall(self) -> QtWidgets.QWidget:
         frame = QtWidgets.QFrame()
@@ -219,10 +259,18 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox = QtWidgets.QVBoxLayout(frame)
         vbox.setContentsMargins(8, 8, 8, 8)
         vbox.setSpacing(8)
+        self.live_status = LiveStatus(parent=frame)
+        vbox.addWidget(self.live_status, stretch=2)
 
-        vbox.addWidget(make_card("Live Status", "Cash / Equity / Exposure / Turnover / T+1 sellable (placeholder)"))
-        vbox.addWidget(make_card("Risk Monitor", "Limit-up/down blocks, slippage/fee estimate, max DD, concentration (placeholder)"))
-        vbox.addWidget(make_card("Task Queue", "Plan runs, data updates, download progress (placeholder)"))
+        self.global_info = QtWidgets.QLabel("--")
+        self.global_info.setWordWrap(True)
+        gbox = QtWidgets.QGroupBox("Global Metrics")
+        gl = QtWidgets.QVBoxLayout(gbox)
+        gl.addWidget(self.global_info)
+        vbox.addWidget(gbox)
+
+        risk_monitor = make_card("Risk Monitor", "Limit-up/down blocks, slippage/fee estimate, max DD, concentration (placeholder)")
+        vbox.addWidget(risk_monitor, stretch=1)
         return frame
 
     def _build_console(self) -> QtWidgets.QWidget:
@@ -316,7 +364,7 @@ class MainWindow(QtWidgets.QMainWindow):
         path_str, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Open Plan JSON",
-            str(Path(__file__).resolve().parents[3] / "plan"),
+            str(self.project_root / "plan"),
             "JSON Files (*.json)"
         )
         if not path_str:
@@ -324,7 +372,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_plan_from_path(Path(path_str))
 
     def _save_strategy(self) -> None:
-        import json
         if not self.current_plan:
             QtWidgets.QMessageBox.information(self, "Save Plan", "No plan to save.")
             return
@@ -332,18 +379,14 @@ class MainWindow(QtWidgets.QMainWindow):
             path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
                 self,
                 "Save Plan JSON",
-                str(Path(__file__).resolve().parents[3] / "plan" / "plan.json"),
+                str(self.project_root / "plan" / "plan.json"),
                 "JSON Files (*.json)"
             )
             if not path_str:
                 return
             self.current_plan_path = Path(path_str)
-        # Ensure signature exists
-        self.current_plan.setdefault("signature", PLAN_SIGNATURE)
         try:
-            self.current_plan_path.parent.mkdir(parents=True, exist_ok=True)
-            with self.current_plan_path.open("w", encoding="utf-8") as f:
-                json.dump(self.current_plan, f, ensure_ascii=False, indent=2)
+            self.plan_storage.save(self.current_plan, self.current_plan_path)
             QtWidgets.QMessageBox.information(self, "Saved", f"Plan saved to: {self.current_plan_path}")
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Save Failed", str(exc))
@@ -365,11 +408,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_plan_from_path(self, path: Path) -> None:
         try:
-            import json
-            with path.open("r", encoding="utf-8") as f:
-                plan = json.load(f)
-            if plan.get("signature") != PLAN_SIGNATURE:
-                raise ValueError("Invalid plan signature")
+            plan = self.plan_storage.load(path)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Open Failed", f"Failed to open plan: {exc}")
             return
@@ -385,32 +424,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not plan:
             self.plan_summary_label.setText("No plan opened.")
             return
-        md = plan.get("Metadata", {})
-        univ = plan.get("Universe", {})
-        arb = plan.get("Arbiter", {})
-        orc = plan.get("Oracles", {})
-        exc = plan.get("Executor", {})
-        name = md.get("name") or md.get("plan_id", "(unnamed)")
-        created = md.get("created_at", "")
-        symbols = univ.get("symbols", [])
-        mode = arb.get("fusion_mode", "")
-        freq = arb.get("scheduling", {}).get("frequency", "")
-        thresh = arb.get("scheduling", {}).get("rebalance_threshold", "")
-        max_pos = arb.get("constraints", {}).get("max_position_per_symbol", "")
-        factors = orc.get("selected_factors", [])
-        cash = exc.get("initial_cash", "")
-
-        summary_lines = [
-            f"Name: {name}",
-            f"Created: {created}",
-            f"Universe: {len(symbols)} symbols ({', '.join(symbols[:6])}{'...' if len(symbols) > 6 else ''})",
-            f"Oracles: {len(factors)} selected",
-            f"Arbiter: mode={mode}, freq={freq}, threshold={thresh}, max_pos={max_pos}",
-            f"Executor: initial_cash={cash}",
-        ]
-        if self.current_plan_path:
-            summary_lines.append(f"Path: {self.current_plan_path}")
-        self.plan_summary_label.setText("\n".join(summary_lines))
+        summary = self.plan_storage.summary_lines(plan, self.current_plan_path)
+        self.plan_summary_label.setText(summary)
 
     def _sync_plan_actions(self) -> None:
         has_plan = self.current_plan is not None
@@ -426,62 +441,44 @@ class MainWindow(QtWidgets.QMainWindow):
             if action is not None:
                 action.setEnabled(enabled)
 
-    # --- Symbol management ---
-    def _load_symbol_cache(self) -> Dict[str, str]:
-        """Load A-share symbols (plus ETF) from cache; fetch via akshare if missing."""
-        cache_path = self.symbol_cache_path
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        if cache_path.exists():
+    # --- Backtest replay ---
+    def update_global_info(self, metrics: Dict[str, Any]) -> None:
+        if not hasattr(self, "global_info") or self.global_info is None:
+            return
+        total_ret = metrics.get("total_return") if isinstance(metrics, dict) else None
+        mdd = metrics.get("max_drawdown") if isinstance(metrics, dict) else None
+        parts = []
+        if total_ret is not None:
+            parts.append(f"Total Return: {total_ret:+.2%}")
+        if mdd is not None:
+            parts.append(f"Max DD: {mdd:.2%}")
+        self.global_info.setText(" | ".join(parts) if parts else "--")
+
+    @QtCore.pyqtSlot(int)
+    def on_replay_step(self, index: int) -> None:
+        history: List[Any] = getattr(self.controller, "history", None) or getattr(self, "history", [])
+        if not history:
+            return
+        if index < 0 or index >= len(history):
+            return
+        state = history[index]
+        if hasattr(self, "live_status"):
             try:
-                df = pd.read_csv(cache_path, dtype=str)
-                if {"code", "name"}.issubset(df.columns):
-                    return dict(zip(df["code"], df["name"]))
-            except Exception:
-                pass  # fallback to fetch
+                self.live_status.update_state(state)
+            except Exception as exc:
+                self._log(f"LiveStatus update failed: {exc}")
+        orders = getattr(state, "orders", None) or []
+        if hasattr(self, "order_panel"):
+            try:
+                self.order_panel.load_orders(orders)
+            except Exception as exc:
+                self._log(f"OrderPanel update failed: {exc}")
 
-        return self._fetch_and_cache_symbols()
-
-    def _fetch_and_cache_symbols(self) -> Dict[str, str]:
-        try:
-            QtWidgets.QMessageBox.information(
-                self,
-                "Downloading",
-                "Downloading A-share and ETF symbols to local cache...",
-            )
-            a_df = ak.stock_zh_a_spot_em()[["代码", "名称"]]
-            etf_df = ak.fund_etf_spot_em()[["代码", "名称"]]
-            df = pd.concat([a_df, etf_df], ignore_index=True)
-            df = df.drop_duplicates(subset=["代码"]).rename(columns={"代码": "code", "名称": "name"})
-            df = df.sort_values("code")
-            df.to_csv(self.symbol_cache_path, index=False, encoding="utf-8")
-            self._set_last_refresh_date(datetime.now().strftime("%Y-%m-%d"))
-            return dict(zip(df["code"], df["name"]))
-        except Exception:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Symbol Load Failed",
-                "Failed to load symbols from akshare. Please check network and retry.",
-            )
-            return {}
-
-    def _set_last_refresh_date(self, date_str: str) -> None:
-        try:
-            self.settings.set_last_refresh_date(date_str)
-            self.last_refresh_date = date_str
-            if hasattr(self, "symbols_panel"):
-                self.symbols_panel.set_last_refresh_date(date_str)
-        except Exception:
-            pass
-
-    def _persist_saved_symbols(self) -> None:
-        try:
-            # Sync with settings manager
-            current = sorted(set(self.saved_symbol_codes))
-            # Replace settings list with current
-            self.settings._settings.savedSymbols = current
-            self.settings.save()
-        except Exception as exc:
-            self._log(f"Failed to persist symbols: {exc}")
+    # --- Symbol management ---
+    def _apply_symbol_sources(self, symbol_map: Dict[str, str]) -> None:
+        self.symbol_map = symbol_map or {}
+        self.name_to_code = self.symbol_service.get_name_to_code()
+        self.suggestion_list = self.symbol_service.get_suggestions()
 
     def _populate_saved_symbols(self) -> None:
         if not self.saved_symbol_codes or not hasattr(self, "symbols_panel"):
@@ -492,17 +489,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self.symbols_panel.add_symbol_display(code)
 
     def _add_symbol_to_saved(self, code: str) -> None:
-        if code in self.saved_symbol_codes:
+        normalized = code.strip().upper()
+        if not normalized or normalized in self.saved_symbol_codes:
             return
-        self.saved_symbol_codes.add(code)
-        self._persist_saved_symbols()
+        self.saved_symbol_codes.add(normalized)
+        self.symbol_service.add_saved_symbol(normalized)
 
     def _remove_symbols_from_saved(self, codes: list[str]) -> None:
-        changed = False
-        for code in codes:
-            if code in self.saved_symbol_codes:
-                self.saved_symbol_codes.remove(code)
-                changed = True
+        normalized = {c.strip().upper() for c in codes if c.strip()}
+        if not normalized:
+            return
+        self.saved_symbol_codes -= normalized
+        self.symbol_service.remove_saved_symbols(list(normalized))
+        for code in normalized:
             cache_path = self.kline_cache_dir / f"{code}.csv"
             if cache_path.exists():
                 try:
@@ -510,8 +509,6 @@ class MainWindow(QtWidgets.QMainWindow):
                     self._log(f"Deleted local data for {code} at {cache_path}")
                 except Exception as exc:
                     self._log(f"Failed to delete {cache_path}: {exc}")
-        if changed:
-            self._persist_saved_symbols()
 
     def _refresh_all_symbol_data(self) -> None:
         if not self.saved_symbol_codes:
@@ -522,18 +519,73 @@ class MainWindow(QtWidgets.QMainWindow):
             cache_path = self.kline_cache_dir / f"{code}.csv"
             self._download_kline_with_progress(code, cache_path)
         today = datetime.now().strftime("%Y-%m-%d")
-        self._set_last_refresh_date(today)
+        self.symbol_service.set_last_refresh_date(today)
+        self.last_refresh_date = today
+        if hasattr(self, "symbols_panel"):
+            self.symbols_panel.set_last_refresh_date(today)
 
     def _refresh_symbol_universe(self) -> None:
-        new_map = self._fetch_and_cache_symbols()
+        new_map = self.symbol_service.fetch_and_cache_symbols()
         if not new_map:
+            QtWidgets.QMessageBox.warning(self, "Symbol Load Failed", "Failed to load symbols. Please retry.")
             return
-        self.symbol_map = new_map
-        self.name_to_code = {name: code for code, name in self.symbol_map.items()}
-        self.suggestion_list = [f"{code} {name}" for code, name in self.symbol_map.items()]
+        self._apply_symbol_sources(new_map)
         if hasattr(self, "symbols_panel"):
             self.symbols_panel.update_symbol_sources(self.symbol_map, self.name_to_code, self.suggestion_list)
-        self._set_last_refresh_date(datetime.now().strftime("%Y-%m-%d"))
+            self.symbols_panel.set_last_refresh_date(self.symbol_service.get_last_refresh_date())
+        self.last_refresh_date = self.symbol_service.get_last_refresh_date()
+
+    # --- Factors management ---
+    def _load_factors_from_settings(self) -> None:
+        factors = getattr(self.settings, "settings", None)
+        factors_map = factors.factors if factors else {}
+        self.factors_data = factors_map or {}
+        self.factor_list_widget.clear()
+        for name in sorted(self.factors_data.keys()):
+            item = QtWidgets.QListWidgetItem(name)
+            self.factor_list_widget.addItem(item)
+
+    def _handle_factor_double_clicked(self, item: QtWidgets.QListWidgetItem) -> None:
+        name = item.text().strip()
+        help_text = self._load_factor_help_text(name)
+        self._show_factor_help(name, help_text)
+
+    def _load_factor_help_text(self, name: str) -> str:
+        # Prefer dedicated factor json if exists, else settings help
+        factor_path = self.project_root / "data" / "factors" / f"{name}.json"
+        if factor_path.exists():
+            try:
+                with factor_path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and data.get("help"):
+                        return str(data.get("help"))
+            except Exception:
+                pass
+        info = self.factors_data.get(name) or {}
+        return str(info.get("help", "No help text available for this factor."))
+
+    def _show_factor_help(self, name: str, text: str) -> None:
+        if hasattr(self, "factor_help_title"):
+            self.factor_help_title.setText(f"Factor: {name}")
+        if hasattr(self, "factor_help_body"):
+            self.factor_help_body.setPlainText(text or "No help text available.")
+        if hasattr(self, "chart_stack"):
+            self.chart_stack.setCurrentWidget(self.factor_help_panel)
+        if hasattr(self, "middle_panel"):
+            idx = self.middle_panel.indexOf(self.chart_stack)
+            if idx >= 0:
+                self.middle_panel.setCurrentIndex(idx)
+                self.middle_panel.setTabText(idx, "Factor Help")
+
+    def _show_chart_view(self) -> None:
+        if hasattr(self, "chart_stack"):
+            self.chart_stack.setCurrentWidget(self.kline_panel)
+        if hasattr(self, "middle_panel"):
+            idx = self.middle_panel.indexOf(self.chart_stack)
+            if idx >= 0:
+                self.middle_panel.setCurrentIndex(idx)
+                self.middle_panel.setTabText(idx, "Chart")
+
     def _handle_symbol_added(self, code: str) -> None:
         self._add_symbol_to_saved(code)
         self._download_kline_if_missing(code)
@@ -547,6 +599,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not code:
             QtWidgets.QMessageBox.warning(self, "Invalid", "Symbol code is empty.")
             return
+        self._show_chart_view()
         normalized = code.strip().upper()
         if normalized not in self.symbol_map:
             QtWidgets.QMessageBox.warning(self, "Not Found", f"Symbol {normalized} is not in the list.")

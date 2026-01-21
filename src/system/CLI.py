@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Callable, Dict
+from typing import Callable, Dict, Any
+from pathlib import Path
+import json
 
 HELP_TEXT = """FeedbackTrader interactive CLI
 Commands:
@@ -8,12 +10,18 @@ Commands:
     echo <text>      Echo the provided text
     exit, quit, q    Exit the CLI
 
-Backtest / plot commands are removed while the engine and data interfaces are being redesigned.
+Use `backtest <json_path>` to start a backtest from a plan JSON file.
 """
 
 def print_help() -> None:
     """Print help text to stdout."""
     print(HELP_TEXT)
+
+def run_backtest_service(plan: Dict[str, Any]) -> None:
+    """Placeholder for backtest service. Implement later."""
+    # Intentionally left as a stub.
+    return None
+
 
 def execute_command(cmd_line: str, write: Callable[[str], None]) -> Dict[str, object] | None:
     """Execute a single CLI command and return a result dict for UI.
@@ -38,6 +46,34 @@ def execute_command(cmd_line: str, write: Callable[[str], None]) -> Dict[str, ob
         text = " ".join(args) if args else ""
         write(text)
         return {"type": "text", "content": text}
+    if cmd in ("backtest", "bt"):
+        if not args:
+            msg = "Usage: backtest <json_path>"
+            write(msg)
+            return {"type": "text", "content": msg}
+        raw_path = args[0]
+        path = Path(raw_path)
+        if not path.is_absolute():
+            project_root = Path(__file__).resolve().parents[2]
+            path = (project_root / raw_path).resolve()
+        if not path.exists():
+            msg = f"Plan file not found: {path}"
+            write(msg)
+            return {"type": "text", "content": msg}
+        try:
+            plan_data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            msg = f"Failed to load JSON: {exc}"
+            write(msg)
+            return {"type": "text", "content": msg}
+        try:
+            run_backtest_service(plan_data)
+            write("Backtest started...")
+            return {"type": "text", "content": "Backtest started..."}
+        except Exception as exc:
+            msg = f"Backtest error: {exc}"
+            write(msg)
+            return {"type": "text", "content": msg}
     if cmd == "anjzy":
         write("You found the secret command! -- ashgk")
         return {"type": "text", "content": "You found the secret command! -- ashgk"}
