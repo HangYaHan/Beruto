@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from PyQt6 import QtCore, QtWidgets
-from src.ui.views.wizards.pages.oracles_page import OraclesPage
+from src.ui.views.wizards.pages.factors_page import FactorsPage
 
 
 class UniversePage(QtWidgets.QWidget):
@@ -56,31 +56,75 @@ class UniversePage(QtWidgets.QWidget):
         hb.addStretch(1)
         layout.addRow("Universe Type", type_box)
 
-        self.u_symbols_list = QtWidgets.QListWidget()
+        self.u_symbols_table = QtWidgets.QTableWidget(0, 2)
+        self.u_symbols_table.setHorizontalHeaderLabels(["Symbol", "Initial Shares"])
+        self.u_symbols_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.u_symbols_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.u_symbols_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.u_symbols_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.u_symbol_input = QtWidgets.QLineEdit()
         self.u_symbol_input.setPlaceholderText("Search by code or name…")
         completer = QtWidgets.QCompleter(self.suggestion_list, self)
         completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
         self.u_symbol_input.setCompleter(completer)
+        self.u_symbol_shares = QtWidgets.QSpinBox()
+        self.u_symbol_shares.setRange(0, 1_000_000_000)
+        self.u_symbol_shares.setValue(0)
         add_btn = QtWidgets.QPushButton("Add")
         del_btn = QtWidgets.QPushButton("Delete Selected")
         add_btn.clicked.connect(self._add_symbol_from_input)
         del_btn.clicked.connect(self._delete_selected)
         controls = QtWidgets.QHBoxLayout()
         controls.setContentsMargins(0, 0, 0, 0)
-        controls.addWidget(self.u_symbol_input)
+        controls.addWidget(self.u_symbol_input, stretch=2)
+        controls.addWidget(QtWidgets.QLabel("Shares"))
+        controls.addWidget(self.u_symbol_shares)
         controls.addWidget(add_btn)
         controls.addWidget(del_btn)
         symbols_box = QtWidgets.QVBoxLayout()
         symbols_box.setContentsMargins(0, 0, 0, 0)
+        symbols_box.setSpacing(4)
         symbols_box.addLayout(controls)
-        symbols_box.addWidget(self.u_symbols_list)
+        symbols_box.addWidget(self.u_symbols_table)
         symbols_widget = QtWidgets.QWidget()
         symbols_widget.setLayout(symbols_box)
-        for s in self._defaults.get("symbols", []):
-            self._add_symbol_to_list(s)
+        # preload from defaults: prefer holdings with shares; fallback to symbols list (shares=0)
+        holdings = self._defaults.get("holdings", []) or []
+        if not holdings:
+            holdings = [{"symbol": s, "shares": 0} for s in self._defaults.get("symbols", [])]
+        for entry in holdings:
+            sym = entry.get("symbol") or entry.get("code") or ""
+            shares = int(entry.get("shares", 0) or 0)
+            self._add_symbol_to_list(sym, shares)
         layout.addRow("Symbols", symbols_widget)
+
+        cash_box = QtWidgets.QHBoxLayout()
+        cash_box.setContentsMargins(0, 0, 0, 0)
+        cash_box.setSpacing(8)
+        self.u_cash_daily = QtWidgets.QDoubleSpinBox()
+        self.u_cash_daily.setRange(0.0, 1e12)
+        self.u_cash_daily.setDecimals(2)
+        self.u_cash_daily.setSingleStep(1000)
+        self.u_cash_weekly = QtWidgets.QDoubleSpinBox()
+        self.u_cash_weekly.setRange(0.0, 1e12)
+        self.u_cash_weekly.setDecimals(2)
+        self.u_cash_weekly.setSingleStep(1000)
+        self.u_cash_monthly = QtWidgets.QDoubleSpinBox()
+        self.u_cash_monthly.setRange(0.0, 1e12)
+        self.u_cash_monthly.setDecimals(2)
+        self.u_cash_monthly.setSingleStep(1000)
+        injections = self._defaults.get("cash_injections", {}) or {}
+        self.u_cash_daily.setValue(float(injections.get("daily", 0.0)))
+        self.u_cash_weekly.setValue(float(injections.get("weekly", 0.0)))
+        self.u_cash_monthly.setValue(float(injections.get("monthly", 0.0)))
+        cash_box.addWidget(QtWidgets.QLabel("Daily"))
+        cash_box.addWidget(self.u_cash_daily)
+        cash_box.addWidget(QtWidgets.QLabel("Weekly"))
+        cash_box.addWidget(self.u_cash_weekly)
+        cash_box.addWidget(QtWidgets.QLabel("Monthly"))
+        cash_box.addWidget(self.u_cash_monthly)
+        layout.addRow("Cash Injection", cash_box)
 
         self.u_freq = QtWidgets.QComboBox()
         self.u_freq.addItems(["1d"])
@@ -94,22 +138,31 @@ class UniversePage(QtWidgets.QWidget):
         if not code or code not in self.symbol_map:
             QtWidgets.QMessageBox.warning(self, "Invalid", "请输入有效的标的（代码或名称），仅允许数据库中的股票代码。")
             return
-        self._add_symbol_to_list(code)
+        shares = int(self.u_symbol_shares.value()) if hasattr(self, "u_symbol_shares") else 0
+        self._add_symbol_to_list(code, shares)
         self.u_symbol_input.clear()
+        if hasattr(self, "u_symbol_shares"):
+            self.u_symbol_shares.setValue(0)
 
     def _delete_selected(self) -> None:
-        for item in self.u_symbols_list.selectedItems():
-            row = self.u_symbols_list.row(item)
-            self.u_symbols_list.takeItem(row)
+        for rng in self.u_symbols_table.selectedRanges():
+            for row in range(rng.bottomRow(), rng.topRow() - 1, -1):
+                self.u_symbols_table.removeRow(row)
 
-    def _add_symbol_to_list(self, code: str) -> None:
+    def _add_symbol_to_list(self, code: str, shares: int = 0) -> None:
         code_clean = code.strip().upper()
         if not code_clean:
             return
-        for i in range(self.u_symbols_list.count()):
-            if self.u_symbols_list.item(i).text() == code_clean:
+        for i in range(self.u_symbols_table.rowCount()):
+            if self.u_symbols_table.item(i, 0) and self.u_symbols_table.item(i, 0).text() == code_clean:
                 return
-        self.u_symbols_list.addItem(code_clean)
+        row = self.u_symbols_table.rowCount()
+        self.u_symbols_table.insertRow(row)
+        self.u_symbols_table.setItem(row, 0, QtWidgets.QTableWidgetItem(code_clean))
+        sb = QtWidgets.QSpinBox()
+        sb.setRange(0, 1_000_000_000)
+        sb.setValue(max(0, int(shares)))
+        self.u_symbols_table.setCellWidget(row, 1, sb)
 
     def _resolve_input_to_code(self, text: str) -> str | None:
         t = text.strip()
@@ -127,19 +180,38 @@ class UniversePage(QtWidgets.QWidget):
 
     # --- data ---
     def collect(self) -> Dict[str, Any]:
+        holdings: list[dict[str, Any]] = []
+        for row in range(self.u_symbols_table.rowCount()):
+            item = self.u_symbols_table.item(row, 0)
+            if not item:
+                continue
+            code = item.text().strip().upper()
+            shares_widget = self.u_symbols_table.cellWidget(row, 1)
+            shares_val = 0
+            if isinstance(shares_widget, QtWidgets.QSpinBox):
+                shares_val = int(shares_widget.value())
+            if code:
+                holdings.append({"symbol": code, "shares": shares_val})
+        symbols = [h["symbol"] for h in holdings]
         return {
             "start_date": self.u_start.date().toString("yyyy-MM-dd"),
             "end_date": self.u_end.date().toString("yyyy-MM-dd"),
             "data_frequency": "1d",
             "type": "static" if self.u_type_static.isChecked() else "dynamic",
-            "symbols": [self.u_symbols_list.item(i).text() for i in range(self.u_symbols_list.count())],
+            "symbols": symbols,
+            "holdings": holdings,
+            "cash_injections": {
+                "daily": float(self.u_cash_daily.value()),
+                "weekly": float(self.u_cash_weekly.value()),
+                "monthly": float(self.u_cash_monthly.value()),
+            },
         }
 
 
-class ArbiterPage(QtWidgets.QWidget):
+class ScoringPage(QtWidgets.QWidget):
     def __init__(self, defaults: Dict[str, Any], parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
-        self._defaults = defaults.get("Arbiter", {})
+        self._defaults = defaults.get("Scoring", {})
         self._build()
 
     def _build(self) -> None:
@@ -269,10 +341,10 @@ class ArbiterPage(QtWidgets.QWidget):
         }
 
 
-class ExecutorPage(QtWidgets.QWidget):
+class ExecutionPage(QtWidgets.QWidget):
     def __init__(self, defaults: Dict[str, Any], parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
-        self._defaults = defaults.get("Executor", {})
+        self._defaults = defaults.get("Execution", {})
         self._build()
 
     def _build(self) -> None:
@@ -314,7 +386,7 @@ class ExecutorPage(QtWidgets.QWidget):
         }
 
 
-class PreserverPage(QtWidgets.QWidget):
+class PlanInfoPage(QtWidgets.QWidget):
     def __init__(self, defaults: Dict[str, Any], parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._defaults = defaults.get("Metadata", {})
@@ -376,8 +448,8 @@ class PreserverPage(QtWidgets.QWidget):
 
 __all__ = [
     "UniversePage",
-    "OraclesPage",
-    "ArbiterPage",
-    "ExecutorPage",
-    "PreserverPage",
+    "FactorsPage",
+    "ScoringPage",
+    "ExecutionPage",
+    "PlanInfoPage",
 ]

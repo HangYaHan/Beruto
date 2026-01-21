@@ -156,7 +156,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tabs.addTab(self._build_universe_tab(), "Universe")
         tabs.addTab(self._build_symbols_tab(), "Symbols")
         tabs.addTab(self._build_factors_tab(), "Factors")
-        tabs.addTab(self._build_plan_tab(), "Plan / Arbiter")
+        tabs.addTab(self._build_plan_tab(), "Plan / Scoring")
 
         layout.addWidget(tabs)
         return wrapper
@@ -221,7 +221,7 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(self.plan_summary_group)
 
         vbox.addWidget(make_card("Plan", "Plan name, universe, benchmark (placeholder)"))
-        vbox.addWidget(make_card("Arbiter", "Weights, thresholds, debounce parameters (placeholder)"))
+        vbox.addWidget(make_card("Scoring", "Weights, thresholds, debounce parameters (placeholder)"))
         vbox.addWidget(make_card("Scheduler", "Rebalance frequency and triggers (placeholder)"))
         return widget
 
@@ -233,7 +233,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.factor_help_panel = self._build_factor_help_panel()
         self.chart_stack.addWidget(self.factor_help_panel)
         tabs.addTab(self.chart_stack, "Chart")
-        tabs.addTab(make_card("Signals", "Oracle signals aligned on timeline (placeholder)"), "Signals")
+        tabs.addTab(make_card("Signals", "Factor signals aligned on timeline (placeholder)"), "Signals")
         tabs.addTab(make_card("Portfolio", "Target vs current holdings, rebalance diff (placeholder)"), "Portfolio")
         self.order_panel = OrderPanel(parent=self)
         tabs.addTab(self.order_panel, "Orders")

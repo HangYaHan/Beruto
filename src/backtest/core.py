@@ -35,7 +35,7 @@ class BacktestEngine:
 
         initial_cash: float = float(
             config.get("initial_cash")
-            or config.get("Executor", {}).get("initial_cash", 1_000_000.0)
+            or config.get("Execution", {}).get("initial_cash", 1_000_000.0)
         )
 
         self._data = DataProxy(universe=universe, start_date=start_date, end_date=end_date)

@@ -1,18 +1,18 @@
-维护因子表；现在左侧的factors标签页应该在启动时读取本地的因子列表及其需要的参数（位于./data/settings.json中，factors字段）。与Symbols的操作逻辑类似，在双击后，中间的标签页Chart不再是纯K线图，而应该是一个新的面板，它能够该因子的说明文本对应json文件中的help字段内容。
+﻿缁存姢鍥犲瓙琛紱鐜板湪宸︿晶鐨刦actors鏍囩椤靛簲璇ュ湪鍚姩鏃惰鍙栨湰鍦扮殑鍥犲瓙鍒楄〃鍙婂叾闇€瑕佺殑鍙傛暟锛堜綅浜?/data/settings.json涓紝factors瀛楁锛夈€備笌Symbols鐨勬搷浣滈€昏緫绫讳技锛屽湪鍙屽嚮鍚庯紝涓棿鐨勬爣绛鹃〉Chart涓嶅啀鏄函K绾垮浘锛岃€屽簲璇ユ槸涓€涓柊鐨勯潰鏉匡紝瀹冭兘澶熻鍥犲瓙鐨勮鏄庢枃鏈搴攋son鏂囦欢涓殑help瀛楁鍐呭銆?
 
 ---
 
-小bug：
+灏廱ug锛?
 
-File菜单栏Run Backtest应该在Exit的下面
+File鑿滃崟鏍廟un Backtest搴旇鍦‥xit鐨勪笅闈?
 
-关闭Plan以后，所有的CI和GI应该都清空
+鍏抽棴Plan浠ュ悗锛屾墍鏈夌殑CI鍜孏I搴旇閮芥竻绌?
 
-在factors/symbols页面做了双击操作以后，中间的标签页应该对应的自动切换到那个页面
+鍦╢actors/symbols椤甸潰鍋氫簡鍙屽嚮鎿嶄綔浠ュ悗锛屼腑闂寸殑鏍囩椤靛簲璇ュ搴旂殑鑷姩鍒囨崲鍒伴偅涓〉闈?
 
-预览K线不再支持拖动的方式打开，移除中间chart页面的提示文本“Double-click or drag to view K-line”
+棰勮K绾夸笉鍐嶆敮鎸佹嫋鍔ㄧ殑鏂瑰紡鎵撳紑锛岀Щ闄や腑闂碿hart椤甸潰鐨勬彁绀烘枃鏈€淒ouble-click or drag to view K-line鈥?
 
 ---
 
-重构：
-所有的控件都应该有一个独立的py文件。
+閲嶆瀯锛?
+鎵€鏈夌殑鎺т欢閮藉簲璇ユ湁涓€涓嫭绔嬬殑py鏂囦欢銆

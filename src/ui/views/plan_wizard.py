@@ -10,10 +10,10 @@ from src.ui.services.factor_service import FactorLibraryLoader
 from src.ui.services.plan_storage import PLAN_SIGNATURE, PlanDefaultsLoader, PlanStorage, PlanValidationError
 from src.ui.services.symbol_service import SymbolDataService
 from src.ui.views.plan_wizard_pages import (
-    ArbiterPage,
-    ExecutorPage,
-    OraclesPage,
-    PreserverPage,
+    ExecutionPage,
+    FactorsPage,
+    PlanInfoPage,
+    ScoringPage,
     UniversePage,
 )
 
@@ -57,7 +57,8 @@ class PlanWizardDialog(QtWidgets.QDialog):
         self.nav.setFixedWidth(180)
         self.nav.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.nav.setAlternatingRowColors(True)
-        for name in ["Universe", "Oracles", "Arbiter", "Executor", "Preserver"]:
+        # Use neutral, domain-first labels instead of game-themed names
+        for name in ["Universe", "Factors", "Scoring", "Execution", "Plan Info"]:
             item = QtWidgets.QListWidgetItem(name)
             item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
             self.nav.addItem(item)
@@ -65,16 +66,16 @@ class PlanWizardDialog(QtWidgets.QDialog):
 
         self.pages = QtWidgets.QStackedWidget(splitter)
         self.page_universe = UniversePage(self._defaults, symbol_map, name_to_code, suggestion_list, parent=self.pages)
-        self.page_oracles = OraclesPage(self._defaults, factor_library, parent=self.pages)
-        self.page_arbiter = ArbiterPage(self._defaults, parent=self.pages)
-        self.page_executor = ExecutorPage(self._defaults, parent=self.pages)
-        self.page_preserver = PreserverPage(self._defaults, parent=self.pages)
+        self.page_factors = FactorsPage(self._defaults, factor_library, parent=self.pages)
+        self.page_scoring = ScoringPage(self._defaults, parent=self.pages)
+        self.page_execution = ExecutionPage(self._defaults, parent=self.pages)
+        self.page_plan_info = PlanInfoPage(self._defaults, parent=self.pages)
         for page in (
             self.page_universe,
-            self.page_oracles,
-            self.page_arbiter,
-            self.page_executor,
-            self.page_preserver,
+            self.page_factors,
+            self.page_scoring,
+            self.page_execution,
+            self.page_plan_info,
         ):
             self.pages.addWidget(page)
 
@@ -117,10 +118,10 @@ class PlanWizardDialog(QtWidgets.QDialog):
             "signature": PLAN_SIGNATURE,
             "version": int(self._defaults.get("version", 1)),
             "Universe": self.page_universe.collect(),
-            "Oracles": self.page_oracles.collect(),
-            "Arbiter": self.page_arbiter.collect(),
-            "Executor": self.page_executor.collect(),
-            "Metadata": self.page_preserver.collect(),
+            "Factors": self.page_factors.collect(),
+            "Scoring": self.page_scoring.collect(),
+            "Execution": self.page_execution.collect(),
+            "Metadata": self.page_plan_info.collect(),
         }
         self.plan_storage.ensure_signature(plan)
         return plan

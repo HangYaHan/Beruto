@@ -109,6 +109,15 @@ class FactorCard(QtWidgets.QWidget):
             })
         if spec["type"] is None and spec["default"] is not None:
             spec["type"] = type(spec["default"]).__name__
+        # Normalize common aliases from settings.json (e.g., "number")
+        if isinstance(spec["type"], str):
+            typ = spec["type"].lower()
+            if typ == "number":
+                spec["type"] = "float"
+            elif typ in {"str", "string"}:
+                spec["type"] = "str"
+            elif typ in {"int", "integer"}:
+                spec["type"] = "int"
         return spec
 
     def _create_editor(self, name: str, raw: Any) -> QtWidgets.QWidget:
@@ -129,7 +138,7 @@ class FactorCard(QtWidgets.QWidget):
             sb.setRange(int(minimum if minimum is not None else -1_000_000_000), int(maximum if maximum is not None else 1_000_000_000))
             sb.setValue(int(default) if default is not None else 0)
             widget = sb
-        elif isinstance(default, float) or ptype in {"float", "double"}:
+        elif isinstance(default, float) or ptype in {"float", "double", "number"}:
             dsb = QtWidgets.QDoubleSpinBox()
             dsb.setDecimals(6)
             dsb.setRange(float(minimum if minimum is not None else -1e9), float(maximum if maximum is not None else 1e9))
@@ -171,7 +180,7 @@ class FactorCard(QtWidgets.QWidget):
         return params
 
 
-class OraclesPage(QtWidgets.QWidget):
+class FactorsPage(QtWidgets.QWidget):
     def __init__(
         self,
         defaults: Dict[str, Any],
@@ -179,8 +188,14 @@ class OraclesPage(QtWidgets.QWidget):
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._defaults = defaults.get("Oracles", {})
+        self._defaults = defaults.get("Factors", {})
         self._factor_library = factor_library or []
+        self._apply_settings_library()
+        if not self._factor_library:
+            # Hard fallback: load directly from settings file so local factors always appear
+            settings_lib = self._load_factor_schema_from_settings()
+            if settings_lib:
+                self._factor_library = list(settings_lib.values())
         self._library_by_name: Dict[str, Dict[str, Any]] = {
             (item.get("name") or ""): item for item in self._factor_library if item.get("name")
         }
@@ -194,6 +209,49 @@ class OraclesPage(QtWidgets.QWidget):
             self._load_factors_from_settings_fallback()
         self._refresh_library()
         self._load_defaults()
+
+    def _apply_settings_library(self) -> None:
+        """Merge factor definitions from data/settings.json so params are present."""
+        settings_lib = self._load_factor_schema_from_settings()
+        if not settings_lib:
+            return
+        if not self._factor_library:
+            self._factor_library = list(settings_lib.values())
+            return
+        updated: list[Dict[str, Any]] = []
+        for meta in self._factor_library:
+            name = meta.get("name")
+            if name and name in settings_lib:
+                # Keep existing description but refresh params from settings
+                merged = dict(settings_lib[name])
+                for k, v in meta.items():
+                    if k not in {"params"}:
+                        merged.setdefault(k, v)
+                updated.append(merged)
+            else:
+                updated.append(meta)
+        self._factor_library = updated
+
+    def _load_factor_schema_from_settings(self) -> Dict[str, Dict[str, Any]]:
+        try:
+            settings_path = Path(__file__).resolve().parents[5] / "data" / "settings.json"
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            factors = payload.get("factors", {}) if isinstance(payload, dict) else {}
+            lib: Dict[str, Dict[str, Any]] = {}
+            for name, meta in factors.items():
+                if not name:
+                    continue
+                entry: Dict[str, Any] = {"name": name}
+                if isinstance(meta, dict):
+                    if "description" in meta:
+                        entry["description"] = meta.get("description") or meta.get("help") or ""
+                    if "help" in meta and not entry.get("description"):
+                        entry["description"] = meta.get("help") or ""
+                    entry["params"] = meta.get("params", {}) or {}
+                lib[name] = entry
+            return lib
+        except Exception:
+            return {}
 
     def _load_factors_from_settings_fallback(self) -> None:
         try:
@@ -280,7 +338,8 @@ class OraclesPage(QtWidgets.QWidget):
 
     # --- library ---
     def _refresh_library(self) -> None:
-        if not self.factor_list:
+        # QListWidget.__bool__ returns False when empty; guard explicitly for None
+        if self.factor_list is None:
             return
         keyword = (self.factor_search.text() if self.factor_search else "").strip().lower()
         self.factor_list.clear()
@@ -359,4 +418,4 @@ class OraclesPage(QtWidgets.QWidget):
         }
 
 
-__all__ = ["OraclesPage", "FactorCard"]
+__all__ = ["FactorsPage", "FactorCard"]

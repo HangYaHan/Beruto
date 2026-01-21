@@ -9,7 +9,7 @@ if __name__ == "__main__":
             "start_date": "2024-01-01",
             "end_date": datetime.now().strftime("%Y-%m-%d"),
         },
-        "Executor": {"initial_cash": 100000.0},
+        "Execution": {"initial_cash": 100000.0},
     }
     engine = BacktestEngine(config)
     snapshots = engine.run_to_end()

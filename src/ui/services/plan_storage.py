@@ -44,26 +44,32 @@ class PlanStorage:
     def summary_lines(self, plan: Dict[str, Any], path: Path | None = None) -> str:
         md = plan.get("Metadata", {}) if plan else {}
         univ = plan.get("Universe", {}) if plan else {}
-        arb = plan.get("Arbiter", {}) if plan else {}
-        orc = plan.get("Oracles", {}) if plan else {}
-        exc = plan.get("Executor", {}) if plan else {}
+        arb = plan.get("Scoring", {}) if plan else {}
+        orc = plan.get("Factors", {}) if plan else {}
+        exc = plan.get("Execution", {}) if plan else {}
         name = md.get("name") or md.get("plan_id", "(unnamed)")
         created = md.get("created_at", "")
         symbols = univ.get("symbols", [])
+        holdings = univ.get("holdings", []) or []
         mode = arb.get("fusion_mode", "")
         freq = arb.get("scheduling", {}).get("frequency", "")
         thresh = arb.get("scheduling", {}).get("rebalance_threshold", "")
         max_pos = arb.get("constraints", {}).get("max_position_per_symbol", "")
         factors = orc.get("selected_factors", [])
         cash = exc.get("initial_cash", "")
+        injections = univ.get("cash_injections", {}) if isinstance(univ.get("cash_injections", {}), dict) else {}
+        inj_daily = injections.get("daily", 0)
+        inj_weekly = injections.get("weekly", 0)
+        inj_monthly = injections.get("monthly", 0)
 
         lines = [
             f"Name: {name}",
             f"Created: {created}",
             f"Universe: {len(symbols)} symbols ({', '.join(symbols[:6])}{'...' if len(symbols) > 6 else ''})",
-            f"Oracles: {len(factors)} selected",
-            f"Arbiter: mode={mode}, freq={freq}, threshold={thresh}, max_pos={max_pos}",
-            f"Executor: initial_cash={cash}",
+            f"Holdings: {sum(1 for _ in holdings)} entries, injections (d/w/m) = {inj_daily}/{inj_weekly}/{inj_monthly}",
+            f"Factors: {len(factors)} selected",
+            f"Scoring: mode={mode}, freq={freq}, threshold={thresh}, max_pos={max_pos}",
+            f"Execution: initial_cash={cash}",
         ]
         if path:
             lines.append(f"Path: {path}")
@@ -87,10 +93,13 @@ class PlanDefaultsLoader:
         except Exception:
             return {
                 "version": 1,
-                "Universe": {},
-                "Oracle": {},
-                "Arbiter": {},
-                "Executor": {},
+                "Universe": {
+                    "cash_injections": {"daily": 0, "weekly": 0, "monthly": 0},
+                    "holdings": [],
+                },
+                "Factors": {},
+                "Scoring": {},
+                "Execution": {},
                 "Metadata": {},
             }
 

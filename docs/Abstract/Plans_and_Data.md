@@ -1,11 +1,11 @@
-# Plans & Data Summary
+﻿# Plans & Data Summary
 
 ## Plan JSON
 - Produced by `PlanWizardDialog` with sections:
   - `Universe`: `start_date`, `end_date`, `data_frequency` (fixed `1d`), `type` (`static`/`dynamic`), `symbols` array.
-  - `Oracles`: `selected_factors` [{name, params}], `preprocess` (zscore, missing_fill).
-  - `Arbiter`: `fusion_mode` (`linear`/`conditional`/`ai`), `linear.weights` (JSON), `conditional.rule`, `ai.model_path`, `scheduling` (frequency, rebalance_threshold), `constraints` (max_position_per_symbol).
-  - `Executor`: `initial_cash`, `commission_rate`, `tax_rate`, `slippage_model`.
+  - `Factors`: `selected_factors` [{name, params}], `preprocess` (zscore, missing_fill).
+  - `Scoring`: `fusion_mode` (`linear`/`conditional`/`ai`), `linear.weights` (JSON), `conditional.rule`, `ai.model_path`, `scheduling` (frequency, rebalance_threshold), `constraints` (max_position_per_symbol).
+  - `Execution`: `initial_cash`, `commission_rate`, `tax_rate`, `slippage_model`.
   - `Metadata`: `plan_id`, `name`, `created_at`, `description`, `save_path`.
 - Defaults loaded from `data/plan_defaults.json` where present.
 
@@ -22,3 +22,4 @@
 ## Known Data Assumptions
 - Daily frequency only; UI K-line uses AkShare daily endpoints.
 - Universe symbols are raw codes matching AkShare expectations (e.g., `600519`).
+

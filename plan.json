@@ -8,14 +8,14 @@
     "type": "static",
     "symbols": []
   },
-  "Oracles": {
+  "Factors": {
     "selected_factors": [],
     "preprocess": {
       "zscore": false,
       "missing_fill": "none"
     }
   },
-  "Arbiter": {
+  "Scoring": {
     "fusion_mode": "linear",
     "linear": {
       "weights": {}
@@ -34,7 +34,7 @@
       "max_position_per_symbol": 0.2
     }
   },
-  "Executor": {
+  "Execution": {
     "initial_cash": 1000000.0,
     "commission_rate": 0.0003,
     "tax_rate": 0.001,
