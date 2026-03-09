@@ -1,0 +1,5 @@
+pyqt5
+pandas
+numpy
+matplotlib
+akshare

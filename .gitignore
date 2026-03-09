@@ -1,7 +1,2 @@
-__pycache__/
 *.pyc
-logs/
-/data/
-.venv/
-/result
-*.pyc
+*.csv

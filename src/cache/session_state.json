@@ -1,0 +1,10 @@
+{
+  "log_lines": [
+    "Welcome to Beruto! This is a simple MVP now.",
+    "Example instructions: Enter 510300 or 600519 -> Click 'Update Data' -> 'Backtest'",
+    "回测已取消。",
+    "回测已取消。"
+  ],
+  "symbol_input": "",
+  "last_backtest": null
+}
