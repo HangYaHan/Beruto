@@ -24,7 +24,7 @@ fn compute_max_drawdown_pct(equity_curve: &[f64]) -> f64 {
 	max_drawdown * 100.0
 }
 
-pub fn run_backtest<S: Strategy>(
+pub fn run_backtest<S: Strategy + ?Sized>(
 	strategy: &mut S,
 	quotes: &[DailyQuote],
 	initial_capital: f64,

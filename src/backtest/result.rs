@@ -1,4 +1,6 @@
-#[derive(Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BacktestResult {
 	pub initial_capital: f64,
 	pub final_equity: f64,

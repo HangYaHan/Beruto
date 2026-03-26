@@ -41,6 +41,7 @@ pub struct ContrarianStrategy {
 }
 
 impl ContrarianStrategy {
+	#[allow(dead_code)]
 	pub fn new() -> Self {
 		Self::with_thresholds(-1.0, 1.0)
 	}
@@ -54,6 +55,7 @@ impl ContrarianStrategy {
 		}
 	}
 
+	#[allow(dead_code)]
 	pub fn thresholds(&self) -> (f64, f64) {
 		(self.buy_drop_threshold_pct, self.sell_rise_threshold_pct)
 	}
