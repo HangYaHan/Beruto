@@ -1,6 +1,7 @@
 use beruto::backtest::engine::run_backtest;
 use beruto::data::data_source::load_daily_quotes;
-use beruto::strategy::contrarian::{BuyAndHoldStrategy, ContrarianStrategy};
+use beruto::strategy::buy_and_hold::BuyAndHoldStrategy;
+use beruto::strategy::contrarian::ContrarianStrategy;
 
 #[test]
 fn smoke_backtest_159581_csv() {

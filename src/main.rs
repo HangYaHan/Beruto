@@ -1,5 +1,5 @@
-mod cli;
 mod backtest;
+mod cli;
 mod data;
 mod strategy;
 
