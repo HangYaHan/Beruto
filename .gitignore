@@ -1,2 +1,7 @@
 /target
+/build
 /data
+*.json
+/target_test
+*.html
+*.json

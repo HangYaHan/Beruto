@@ -1,6 +1,28 @@
 use crate::data::data_source::DailyQuote;
 use crate::strategy::base::{Signal, Strategy};
 
+pub struct NoopStrategy;
+
+impl NoopStrategy {
+	pub fn new() -> Self {
+		Self
+	}
+}
+
+impl Strategy for NoopStrategy {
+	fn name(&self) -> &str {
+		"Noop"
+	}
+
+	fn on_bar(&mut self, _quote: &DailyQuote) -> Signal {
+		Signal::Hold
+	}
+
+	fn description(&self) -> &str {
+		"No-op strategy that never trades and always holds."
+	}
+}
+
 pub struct BuyAndHoldStrategy {
 	has_position: bool,
 }
