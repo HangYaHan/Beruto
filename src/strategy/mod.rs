@@ -2,6 +2,8 @@ pub mod base;
 pub mod contrarian;
 pub mod kdj;
 
+use std::collections::HashMap;
+
 use crate::strategy::base::Strategy;
 use crate::strategy::contrarian::{BuyAndHoldStrategy, ContrarianStrategy, NoopStrategy};
 use crate::strategy::kdj::KdjStrategy;
@@ -118,6 +120,49 @@ pub fn strategy_specs() -> &'static [StrategySpec] {
 
 pub fn find_strategy_spec(id: &str) -> Option<&'static StrategySpec> {
 	strategy_specs().iter().find(|spec| spec.id == id)
+}
+
+pub fn default_strategy_param_values(strategy_id: &str) -> HashMap<String, f64> {
+	let mut values = HashMap::new();
+
+	if let Some(spec) = find_strategy_spec(strategy_id) {
+		for param in spec.params {
+			if let Some(default_raw) = param.default_value {
+				if let Ok(parsed) = default_raw.parse::<f64>() {
+					values.insert(param.name.to_string(), parsed);
+				}
+			}
+		}
+	}
+
+	values
+}
+
+pub fn validate_strategy_param(strategy_id: &str, name: &str, value: f64) -> Result<(), String> {
+	if !value.is_finite() {
+		return Err(format!(
+			"Invalid value for {strategy_id}.{name}: value must be finite"
+		));
+	}
+
+	let spec = find_strategy_spec(strategy_id)
+		.ok_or_else(|| format!("Unknown strategy: {strategy_id}"))?;
+
+	if !spec.params.iter().any(|param| param.name == name) {
+		return Err(format!(
+			"Unknown parameter '{name}' for strategy '{strategy_id}'"
+		));
+	}
+
+	match (strategy_id, name) {
+		("kdj", "period") if value < 1.0 => {
+			Err("kdj.period must be >= 1".to_string())
+		}
+		("kdj", "period") if value.fract() != 0.0 => {
+			Err("kdj.period must be an integer".to_string())
+		}
+		_ => Ok(()),
+	}
 }
 
 pub fn build_strategy(config: &StrategyConfig) -> Box<dyn Strategy> {

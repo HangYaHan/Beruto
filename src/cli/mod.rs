@@ -8,7 +8,7 @@ use crate::data::data_source::{load_daily_quotes_by_symbol, symbol_to_daily_csv_
 use crate::data::fetcher::fetch_and_store_daily_quotes;
 use crate::data::storage::{clean_results, ensure_results_dir, load_all_run_records, make_run_id, results_dir, save_run_record, BacktestRunRecord};
 use crate::strategy::{build_strategy, find_strategy_spec, strategy_specs, StrategyConfig};
-use help::{print_banner, print_help};
+use help::{print_banner, print_help, print_startup_help};
 use parser::{parse_f64_flag, parse_f64_list_flag, parse_flag_value, parse_list_flag, parse_usize_flag, parse_usize_list_flag};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -21,7 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn run_repl() -> Result<(), Box<dyn Error>> {
 	print_banner();
-	print_help();
+	print_startup_help();
 
 	loop {
 		print!("beruto> ");

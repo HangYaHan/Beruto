@@ -1,17 +1,41 @@
-use std::fs;
-use std::path::Path;
+const BERUTO_BANNER: [&str; 7] = [
+	"BBBBBBB   EEEEEEE   RRRRRRR    U     U   TTTTTTT   OOOOOOO",
+	"B     B   E         R     R    U     U      T      O     O",
+	"B     B   E         R     R    U     U      T      O     O",
+	"BBBBBBB   EEEEE     RRRRRRR    U     U      T      O     O",
+	"B     B   E         R   R      U     U      T      O     O",
+	"B     B   E         R    R     U     U      T      O     O",
+	"BBBBBBB   EEEEEEE   R     R     UUUUU       T      OOOOOOO",
+];
 
 pub fn print_banner() {
-	println!("Beruto Interactive CLI");
-	if Path::new("icon.png").exists() {
-		if let Ok(meta) = fs::metadata("icon.png") {
-			println!("Icon loaded: icon.png ({} bytes)", meta.len());
-		} else {
-			println!("Icon loaded: icon.png");
-		}
-	} else {
-		println!("Icon not found: icon.png");
+	let max_width = BERUTO_BANNER
+		.iter()
+		.map(|line| line.chars().count())
+		.max()
+		.unwrap_or(0);
+	let border = "=".repeat(max_width + 10);
+
+	println!("{}", border);
+	for line in BERUTO_BANNER {
+		println!("=    {}    =", line);
 	}
+	println!("{}", border);
+	println!();
+}
+
+pub fn print_startup_help() {
+	println!("Commands:");
+	println!("  help");
+	println!("  exit | quit");
+	println!("  clear");
+	println!("  fetch");
+	println!("  strategy");
+	println!("  backtest");
+	println!("  run");
+	println!("  leaderboard");
+	println!("  visualize");
+	println!("  clean");
 	println!();
 }
 
