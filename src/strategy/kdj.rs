@@ -4,93 +4,132 @@ use crate::data::data_source::DailyQuote;
 use crate::strategy::base::{Signal, Strategy};
 
 pub struct KdjStrategy {
-    has_position: bool,
-    period: usize,
-    high_window: VecDeque<f64>,
-    low_window: VecDeque<f64>,
-    k: f64,
-    d: f64,
-    prev_k: Option<f64>,
-    prev_d: Option<f64>,
+	period: usize,
+	buy_threshold: f64,
+	sell_threshold: f64,
+	has_position: bool,
+	highs: VecDeque<f64>,
+	lows: VecDeque<f64>,
+	k_value: f64,
+	d_value: f64,
 }
 
 impl KdjStrategy {
-    pub fn new() -> Self {
-        Self::with_period(9)
-    }
+	#[allow(dead_code)]
+	pub fn new() -> Self {
+		Self::with_params(9, 20.0, 80.0)
+	}
 
-    pub fn with_period(period: usize) -> Self {
-        Self {
-            has_position: false,
-            period,
-            high_window: VecDeque::new(),
-            low_window: VecDeque::new(),
-            k: 50.0,
-            d: 50.0,
-            prev_k: None,
-            prev_d: None,
-        }
-    }
+	#[allow(dead_code)]
+	pub fn with_params(period: usize, buy_threshold: f64, sell_threshold: f64) -> Self {
+		Self {
+			period: period.max(1),
+			buy_threshold,
+			sell_threshold,
+			has_position: false,
+			highs: VecDeque::new(),
+			lows: VecDeque::new(),
+			k_value: 50.0,
+			d_value: 50.0,
+		}
+	}
 
-    fn push_window(window: &mut VecDeque<f64>, value: f64, limit: usize) {
-        window.push_back(value);
-        if window.len() > limit {
-            window.pop_front();
-        }
-    }
+	#[allow(dead_code)]
+	pub fn params(&self) -> (usize, f64, f64) {
+		(self.period, self.buy_threshold, self.sell_threshold)
+	}
+
+	fn update_window(window: &mut VecDeque<f64>, value: f64, period: usize) {
+		window.push_back(value);
+		if window.len() > period {
+			window.pop_front();
+		}
+	}
+
+	fn highest_high(&self) -> f64 {
+		self.highs
+			.iter()
+			.copied()
+			.fold(f64::NEG_INFINITY, f64::max)
+	}
+
+	fn lowest_low(&self) -> f64 {
+		self.lows
+			.iter()
+			.copied()
+			.fold(f64::INFINITY, f64::min)
+	}
 }
 
 impl Strategy for KdjStrategy {
-    fn name(&self) -> &str {
-        "KDJ"
-    }
+	fn name(&self) -> &str {
+		"KDJ"
+	}
 
-    fn on_bar(&mut self, quote: &DailyQuote) -> Signal {
-        Self::push_window(&mut self.high_window, quote.high, self.period);
-        Self::push_window(&mut self.low_window, quote.low, self.period);
+	fn on_bar(&mut self, quote: &DailyQuote) -> Signal {
+		Self::update_window(&mut self.highs, quote.high, self.period);
+		Self::update_window(&mut self.lows, quote.low, self.period);
 
-        let highest = self
-            .high_window
-            .iter()
-            .fold(f64::MIN, |acc, value| acc.max(*value));
-        let lowest = self
-            .low_window
-            .iter()
-            .fold(f64::MAX, |acc, value| acc.min(*value));
+		let highest_high = self.highest_high();
+		let lowest_low = self.lowest_low();
+		let range = highest_high - lowest_low;
+		let rsv = if range.abs() < f64::EPSILON {
+			50.0
+		} else {
+			((quote.close - lowest_low) / range * 100.0).clamp(0.0, 100.0)
+		};
 
-        let rsv = if highest <= lowest {
-            50.0
-        } else {
-            ((quote.close - lowest) / (highest - lowest) * 100.0).clamp(0.0, 100.0)
-        };
+		self.k_value = (2.0 * self.k_value + rsv) / 3.0;
+		self.d_value = (2.0 * self.d_value + self.k_value) / 3.0;
+		let j_value = 3.0 * self.k_value - 2.0 * self.d_value;
 
-        self.k = (2.0 / 3.0) * self.k + (1.0 / 3.0) * rsv;
-        self.d = (2.0 / 3.0) * self.d + (1.0 / 3.0) * self.k;
+		if !self.has_position && j_value <= self.buy_threshold {
+			self.has_position = true;
+			Signal::Buy
+		} else if self.has_position && j_value >= self.sell_threshold {
+			self.has_position = false;
+			Signal::Sell
+		} else {
+			Signal::Hold
+		}
+	}
 
-        let signal = match (self.prev_k, self.prev_d) {
-            (Some(last_k), Some(last_d)) => {
-                let cross_up = last_k <= last_d && self.k > self.d;
-                let cross_down = last_k >= last_d && self.k < self.d;
+	fn description(&self) -> &str {
+		"A KDJ oscillator strategy that buys when J falls below the buy threshold and sells when J rises above the sell threshold."
+	}
+}
 
-                if !self.has_position && cross_up {
-                    self.has_position = true;
-                    Signal::Buy
-                } else if self.has_position && cross_down {
-                    self.has_position = false;
-                    Signal::Sell
-                } else {
-                    Signal::Hold
-                }
-            }
-            _ => Signal::Hold,
-        };
+#[cfg(test)]
+mod tests {
+	use super::KdjStrategy;
+	use crate::data::data_source::DailyQuote;
+	use crate::strategy::base::{Signal, Strategy};
 
-        self.prev_k = Some(self.k);
-        self.prev_d = Some(self.d);
-        signal
-    }
+	fn quote(date: &str, close: f64) -> DailyQuote {
+		DailyQuote {
+			date: date.to_string(),
+			open: close,
+			noon_close: close,
+			close,
+			high: close,
+			low: close,
+			volume: 1.0,
+			amount: 1.0,
+			amplitude_pct: 0.0,
+		}
+	}
 
-    fn description(&self) -> &str {
-        "KDJ crossover strategy: buy on K crossing above D, sell on crossing below."
-    }
+	#[test]
+	fn kdj_generates_buy_and_sell_on_reversal() {
+		let mut strategy = KdjStrategy::with_params(3, 20.0, 80.0);
+		let prices = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0];
+		let mut signals = Vec::new();
+
+		for (index, price) in prices.iter().enumerate() {
+			signals.push(strategy.on_bar(&quote(&format!("2026-04-{index:02}", index = index + 1), *price)));
+		}
+
+		assert!(signals.contains(&Signal::Buy), "expected at least one buy signal");
+		assert!(signals.contains(&Signal::Sell), "expected at least one sell signal");
+	}
 }
