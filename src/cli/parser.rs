@@ -11,13 +11,6 @@ pub fn parse_flag_value<'a>(args: &'a [&'a str], flag: &str) -> Option<&'a str> 
 	None
 }
 
-pub fn parse_f64_flag(args: &[&str], flag: &str, default: f64) -> Result<f64, Box<dyn Error>> {
-	match parse_flag_value(args, flag) {
-		Some(raw) => Ok(raw.parse::<f64>()?),
-		None => Ok(default),
-	}
-}
-
 pub fn parse_list_flag(args: &[&str], flag: &str) -> Vec<String> {
 	parse_flag_value(args, flag)
 		.map(|raw| {

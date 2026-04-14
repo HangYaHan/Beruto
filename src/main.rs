@@ -1,6 +1,8 @@
 mod backtest;
 mod cli;
 mod data;
+mod manager;
+mod portfolio;
 mod strategy;
 
 use std::process;

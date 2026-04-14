@@ -5,3 +5,4 @@
 /target_test
 *.html
 *.json
+/target_runcheck

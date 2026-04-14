@@ -6,6 +6,16 @@ pub struct TradeEvent {
 	pub date: String,
 	pub price: f64,
 	pub side: String,
+	#[serde(default)]
+	pub commission: f64,
+	#[serde(default)]
+	pub transaction_tax: f64,
+	#[serde(default)]
+	pub transfer_fee: f64,
+	#[serde(default)]
+	pub dividend_income: f64,
+	#[serde(default)]
+	pub dividend_tax: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -18,9 +28,29 @@ pub struct DrawdownSpan {
 pub struct BacktestResult {
 	pub initial_capital: f64,
 	pub final_equity: f64,
+	#[serde(default)]
+	pub gross_final_equity: f64,
 	pub total_return_pct: f64,
+	#[serde(default)]
+	pub gross_return_pct: f64,
+	#[serde(default)]
+	pub net_return_pct: f64,
 	pub max_drawdown_pct: f64,
 	pub trades: usize,
+	#[serde(default)]
+	pub commission_total: f64,
+	#[serde(default)]
+	pub transaction_tax_total: f64,
+	#[serde(default)]
+	pub transfer_fee_total: f64,
+	#[serde(default)]
+	pub tax_fee_total: f64,
+	#[serde(default)]
+	pub dividend_income_total: f64,
+	#[serde(default)]
+	pub dividend_tax_total: f64,
+	#[serde(default)]
+	pub dividend_yield_pct: f64,
 	#[serde(default)]
 	pub equity_curve: Vec<f64>,
 	#[serde(default)]

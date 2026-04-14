@@ -86,6 +86,7 @@ pub fn fetch_and_store_daily_quotes(symbol: &str, output_path: &str) -> Result<(
 		"open",
 		"noon_close",
 		"close",
+		"dividend_per_share",
 		"high",
 		"low",
 		"volume",
@@ -117,12 +118,14 @@ pub fn fetch_and_store_daily_quotes(symbol: &str, output_path: &str) -> Result<(
 
 		// MVP fallback until minute-level ingestion is added.
 		let noon_close = close;
+		let dividend_per_share = "0.0";
 
 		writer.write_record([
 			date,
 			open,
 			noon_close,
 			close,
+			dividend_per_share,
 			high,
 			low,
 			volume,

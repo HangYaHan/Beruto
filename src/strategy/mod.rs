@@ -1,4 +1,5 @@
 pub mod base;
+pub mod buy_and_hold;
 pub mod contrarian;
 pub mod kdj;
 

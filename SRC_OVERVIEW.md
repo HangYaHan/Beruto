@@ -10,14 +10,33 @@
 
 - `src/lib.rs`
   - 库入口。
-  - 导出 `backtest`、`data`、`strategy` 三个模块。
+  - 导出 `backtest`、`data`、`strategy`、`portfolio`、`manager` 模块。
 
 ## CLI 模块
 
 - `src/cli/mod.rs`
-  - CLI 主控制器。
-  - 负责 REPL 循环、命令分发、命令实现（fetch/backtest/run/leaderboard/clean）。
-  - 包含批量任务计划解析、任务展开、执行与 summary 保存逻辑。
+  - CLI 主入口与聚合文件。
+  - 保留 REPL 循环与公共 `use`，通过 `include!` 组合子文件实现。
+
+- `src/cli/core_commands.rs`
+  - 基础命令分发与轻量命令实现。
+  - 包含 `execute_line`、`strategy`、`config`、`run` 分发、清屏以及 config 值解析与路径写入逻辑。
+
+- `src/cli/run_planning.rs`
+  - 批量回测计划与通用工具。
+  - 包含 run plan 读取、run 参数合并、日期校验、日期过滤、数值参数提取等函数。
+
+- `src/cli/backtest_flow.rs`
+  - 回测主流程与批量执行。
+  - 包含任务展开、任务去重 key、单次/批量回测执行、结果保存、排行榜与回测结果打印。
+
+- `src/cli/backtest_reporting.rs`
+  - 回测结果展示相关函数。
+  - 包含单次结果打印与 `leaderboard` 命令实现。
+
+- `src/cli/visualization_and_clean.rs`
+  - 可视化与清理命令实现。
+  - 包含单次/批量可视化 HTML 输出、批次记录聚合、`clean` 命令。
 
 - `src/cli/help.rs`
   - CLI 展示函数。
@@ -36,7 +55,7 @@
 - `src/backtest/engine.rs`
   - 回测执行引擎。
   - 按策略信号驱动仓位变化并生成净值曲线。
-  - 计算总收益率与最大回撤。
+  - 计算毛收益、净收益、分红、手续费与税费拆分。
 
 - `src/backtest/result.rs`
   - 回测结果数据结构定义 `BacktestResult`。
@@ -51,16 +70,18 @@
 - `src/data/data_source.rs`
   - 数据读取与解析。
   - 加载本地 CSV 为 `DailyQuote` 列表。
+  - 支持可选分红列 `dividend_per_share`（缺列时回退为 0）。
   - 若指定 symbol 对应文件不存在，会触发在线拉取。
 
 - `src/data/fetcher.rs`
   - 在线数据拉取实现。
   - 调用 EastMoney 接口获取日线数据并写入 CSV。
+  - 生成 `dividend_per_share` 列（当前默认写入 0.0，为后续分红数据源预留）。
   - 包含代码规范化、市场前缀映射、基本校验。
 
 - `src/data/storage.rs`
   - 回测结果存储与加载。
-  - 管理 `.beruto/results` 目录。
+  - 管理可执行文件旁的 `result` 目录。
   - 保存单次 run 记录、加载历史记录、清理结果文件。
 
 ## 策略模块
@@ -70,11 +91,34 @@
   - 定义策略元信息（`StrategySpec`）与运行配置（`StrategyConfig`）。
   - 根据配置构造具体策略实例。
 
+## 组合与管理器模块
+
+- `src/portfolio/mod.rs`
+  - 组合账户与持仓基础模型。
+  - 定义 `Portfolio`、`Position`、`PortfolioConfig` 与基础权益/敞口计算。
+
+- `src/manager/mod.rs`
+  - 管理器抽象与基础实现。
+  - 定义 `Manager` trait、`SignalIntent`、`ManagerContext`、`OrderDecision`、`ManagerKind`。
+  - 提供 `VoidManager` 与 `ScoreRankManager` 作为当前首版骨架。
+
 - `src/strategy/base.rs`
   - 策略抽象层。
   - 定义 `Signal` 枚举和 `Strategy` trait。
 
+- `src/strategy/buy_and_hold.rs`
+  - 策略实现。
+  - 买入并持有策略。
+
 - `src/strategy/contrarian.rs`
   - 策略实现。
-  - 包含 `BuyAndHoldStrategy` 与 `ContrarianStrategy`。
+  - 包含 `ContrarianStrategy`。
   - `ContrarianStrategy` 支持阈值配置。
+
+- `src/strategy/kdj.rs`
+  - 策略实现。
+  - 基于 KDJ 指标的策略。
+
+- `src/strategy/macd.rs`
+  - 策略实现。
+  - 基于 MACD 指标的策略。

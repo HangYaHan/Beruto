@@ -111,6 +111,7 @@ mod tests {
 			open: close,
 			noon_close: close,
 			close,
+			dividend_per_share: 0.0,
 			high: close,
 			low: close,
 			volume: 1.0,

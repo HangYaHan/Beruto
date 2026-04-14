@@ -6,12 +6,13 @@ use std::path::Path;
 use crate::data::fetcher::fetch_and_store_daily_quotes;
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DailyQuote {
 	pub date: String,
 	pub open: f64,
 	pub noon_close: f64,
 	pub close: f64,
+	pub dividend_per_share: f64,
 	pub high: f64,
 	pub low: f64,
 	pub volume: f64,
@@ -88,6 +89,7 @@ pub fn load_daily_quotes<P: AsRef<Path>>(file_path: P) -> Result<Vec<DailyQuote>
 		.position(|h| h == "amplitude_pct")
 		.ok_or_else(|| missing_column_error("amplitude_pct"))?;
 	let idx_noon_close = headers.iter().position(|h| h == "noon_close");
+	let idx_dividend_per_share = headers.iter().position(|h| h == "dividend_per_share");
 
 	let mut quotes = Vec::new();
 
@@ -152,12 +154,26 @@ pub fn load_daily_quotes<P: AsRef<Path>>(file_path: P) -> Result<Vec<DailyQuote>
 				.ok_or_else(|| IoError::new(ErrorKind::InvalidData, "Missing amplitude_pct value"))?,
 			"amplitude_pct",
 		)?;
+		let dividend_per_share = match idx_dividend_per_share {
+			Some(idx) => {
+				let raw_dividend = raw.get(idx).ok_or_else(|| {
+					IoError::new(ErrorKind::InvalidData, "Missing dividend_per_share value")
+				})?;
+				if raw_dividend.trim().is_empty() {
+					0.0
+				} else {
+					parse_f64_field(raw_dividend, "dividend_per_share")?
+				}
+			}
+			None => 0.0,
+		};
 
 		let quote = DailyQuote {
 			date,
 			open,
 			noon_close,
 			close,
+			dividend_per_share,
 			high,
 			low,
 			volume,
